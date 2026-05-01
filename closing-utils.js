@@ -88,13 +88,6 @@ const ClosingUtils = {
     // Submit closing shift ke Supabase
     async submit(unitName, pinInput, actualCash, notes) {
         const auth = AuthUtils.getAuthPayload();
-        
-        // Validasi duplikasi sebelum submit (server-side check)
-        const isClosed = await this.checkAlreadyClosed(unitName, auth.shift_number);
-        if (isClosed) {
-            return { ok: false, error: 'Shift ini sudah ditutup hari ini. Tidak bisa ditutup ulang.' };
-        }
-
         const pinHash = await AuthUtils.hashPin(pinInput);
         const expected = await this.calculateExpectedCash(unitName, auth.shift_number);
 
@@ -117,8 +110,8 @@ const ClosingUtils = {
         const isClosed = await this.checkAlreadyClosed(unitName, shift);
         
         if (isClosed) {
-            alert(`❌ Shift ${shift} sudah ditutup hari ini!\n\nAnda tidak bisa melakukan tutup kasir lebih dari satu kali untuk shift yang sama.`);
-            return;
+            const lanjut = confirm(`⚠️ Shift ${shift} sudah pernah ditutup hari ini!\n\nJika Anda melanjutkan, sistem akan membuat rekam tutup kasir baru (ganda) di laporan owner.\n\nApakah Anda yakin ingin menutup kasir lagi?`);
+            if (!lanjut) return;
         }
 
         const modal = document.getElementById('modalClosing');
