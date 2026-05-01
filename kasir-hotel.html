@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kasir Hotel — Pancoran Group</title>
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Kasir Hotel">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script src="config.js"></script>
+    <script src="auth-utils.js"></script>
+    <script src="supabase.js"></script>
+    <script src="sync.js"></script>
+    <script src="fnb-context.js"></script>
+    <script src="closing-utils.js"></script>
+    <style>
+        :root { --accent: var(--hotel); --accent-rgb: 217,119,6; }
+        .unit-tab.active { background: var(--hotel); border-color: var(--hotel); color: #fff; }
+        .btn-primary { background: var(--hotel); }
+        .occ-bar-fill { background: var(--hotel); }
+        .total-box { border-color: var(--hotel); }
+        .total-box .val { color: var(--hotel); }
+        .tipe-badge { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: rgba(217,119,6,0.12); color: var(--hotel); }
+        .info-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; font-size: 13px; color: var(--muted); }
+        .info-box strong { color: var(--text); font-size: 16px; }
+        .checkout-info { background: rgba(220,38,38,0.05); border: 1px solid var(--occupied); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; font-size: 14px; }
+        .checkout-info .lbl { color: var(--muted); font-size: 12px; }
+        .checkout-info .val { font-weight: 700; font-size: 15px; }
+        .pin-hint { font-size: 11px; color: var(--muted); text-align: right; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+    <button class="navbar-back" onclick="window.location.href='index.html'">← Kembali</button>
+    <span class="navbar-dot dot-hotel"></span>
+    <span class="navbar-title" id="navTitle">Kasir Hotel</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <span id="syncDot" style="width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block;transition:background 0.3s" title="Status sinkronisasi"></span>
+        <button id="syncBtn" class="navbar-back" onclick="SyncQueue.manualSync()" style="position:relative">✓ Tersinkron</button>
+        <span id="syncBadge" style="display:none;background:#d97706;color:#fff;font-size:11px;font-weight:800;width:20px;height:20px;border-radius:50%;align-items:center;justify-content:center;">0</span>
+        <button class="navbar-back" onclick="ClosingUtils.showModal(currentUnitName)" title="Tutup Kasir">🔒</button>
+        <button class="navbar-back" onclick="AuthUtils.showRebindModal('hotel')" title="Ganti perangkat (Master PIN)">⚙️</button>
+    </div>
+</nav>
+
+<div class="page">
+    <!-- Unit info — perangkat terkunci ke 1 unit, tidak ada tab switching -->
+    <div id="unitInfo" style="font-size:13px;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+        <span style="background:rgba(217,119,6,0.12);color:var(--hotel);padding:4px 10px;border-radius:99px;font-weight:700;font-size:12px" id="unitBadge"></span>
+        <span id="shiftInfo"></span>
+    </div>
+    <div class="occupancy-bar">
+        <div class="occ-stat"><div class="num" id="occFree" style="color:var(--available)">–</div><div class="lbl">Tersedia</div></div>
+        <div class="occ-bar-track"><div class="occ-bar-fill" id="occBar" style="width:0%"></div></div>
+        <div class="occ-stat"><div class="num" id="occUsed" style="color:var(--occupied)">–</div><div class="lbl">Terisi</div></div>
+    </div>
+    <div class="legend">
+        <div class="legend-item"><div class="legend-dot available"></div> Tersedia</div>
+        <div class="legend-item"><div class="legend-dot occupied"></div> Terisi</div>
+        <div class="legend-item"><span style="font-size:10px;font-weight:700;background:var(--hotel);color:#fff;padding:2px 6px;border-radius:4px;">STD</span> Standard</div>
+        <div class="legend-item"><span style="font-size:10px;font-weight:700;background:var(--karaoke);color:#fff;padding:2px 6px;border-radius:4px;">DLX</span> Deluxe</div>
+        <div class="legend-item"><span style="font-size:10px;font-weight:700;background:var(--wahana);color:#fff;padding:2px 6px;border-radius:4px;">STE</span> Suite</div>
+    </div>
+    <div class="floor-label">Lantai 1</div>
+    <div class="room-grid" id="roomGrid"></div>
+</div>
+
+<!-- MODAL CHECK-IN -->
+<div class="modal-overlay" id="modalCheckin">
+    <div class="modal">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="modalTitle">Kamar 101</div>
+                <div class="modal-subtitle" id="modalSubtitle">Standard — Rp 250.000/malam</div>
+            </div>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="form-group">
+            <label>Nama Tamu</label>
+            <input type="text" id="inputNama" placeholder="Masukkan nama tamu">
+        </div>
+        <div class="form-group">
+            <label>Jumlah Malam</label>
+            <input type="number" id="inputMalam" value="1" min="1" onchange="hitungTotal()">
+        </div>
+        <div class="info-box">Total: <strong id="labelTotal">Rp 0</strong></div>
+        <div class="form-group">
+            <label>Metode Pembayaran</label>
+            <div class="bayar-grid" id="bayarGrid"></div>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-secondary" onclick="closeModal()">Batal</button>
+            <button class="btn btn-primary" id="btnCheckin" onclick="doCheckin()">✓ Check In</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CHECK-OUT -->
+<div class="modal-overlay" id="modalCheckout">
+    <div class="modal">
+        <div class="modal-header">
+            <div>
+                <div class="modal-title" id="coTitle">Kamar 101</div>
+                <div class="modal-subtitle" id="coSubtitle">Saat ini: Terisi</div>
+            </div>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="checkout-info">
+            <div class="lbl">Nama Tamu</div><div class="val" id="coNama">—</div><br>
+            <div class="lbl">Check In</div><div class="val" id="coWaktuIn">—</div><br>
+            <div class="lbl">Total Kamar</div><div class="val" id="coTotal" style="color:var(--hotel);font-size:18px;">Rp 0</div>
+        </div>
+        <!-- F&B Toggle saat checkout -->
+        <div class="fnb-toggle-box">
+            <label class="fnb-toggle-label">
+                <input type="checkbox" id="fnbWalkIn" checked onchange="FnbContext.toggleUI()">
+                <span id="fnbContextLabel">🚶 Tidak ada tagihan F&B</span>
+            </label>
+            <div class="fnb-linked-fields" id="fnbLinkedFields">
+                <input type="number" id="coFnbAmount" placeholder="Jumlah tagihan F&B (Rp)" min="0" style="width:100%" onchange="updateCheckoutTotal()">
+            </div>
+        </div>
+        <div class="total-box" style="margin-bottom:14px">
+            <div class="lbl">GRAND TOTAL</div>
+            <div class="val" id="coGrandTotal">Rp 0</div>
+        </div>
+        <div class="form-group">
+            <label>Metode Pembayaran</label>
+            <div class="bayar-grid" id="coBayarGrid"></div>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-secondary" onclick="closeModal()">Batal</button>
+            <button class="btn btn-danger" id="btnCheckout" onclick="doCheckout()">✓ Check Out</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CLOSING SHIFT -->
+<div class="modal-overlay" id="modalClosing">
+    <div class="closing-modal">
+        <h3>🔒 Tutup Kasir</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px" id="closingUnitName">—</p>
+        <div class="closing-stat-row">
+            <span class="lbl">Shift</span>
+            <span class="val" id="closingShiftLabel">—</span>
+        </div>
+        <div class="closing-stat-row">
+            <span class="lbl">Total Cash Sistem</span>
+            <span class="val" id="expectedCashDisplay">Rp 0</span>
+        </div>
+        <div class="form-group" style="margin-top:14px">
+            <label>Hitung Fisik (Rp)</label>
+            <input type="number" id="actualCashInput" placeholder="Masukkan jumlah uang fisik" oninput="ClosingUtils.previewDiff()">
+        </div>
+        <div class="diff-preview" id="diffPreview"></div>
+        <div class="form-group">
+            <label>Catatan (opsional)</label>
+            <textarea id="closingNotes" rows="2" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:'Outfit',sans-serif;font-size:14px;resize:none;" placeholder="Catatan selisih..."></textarea>
+        </div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('modalClosing').classList.remove('show')">Batal</button>
+            <button class="btn-closing" style="flex:1;margin:0" onclick="handleClosingSubmit()">✓ Konfirmasi Tutup</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let activeUnit = 0;
+let activeKamar = null;
+let selectedBayar = 'Cash';
+let selectedCoBayar = 'Cash';
+let currentUnitName = '';
+
+function init() {
+    // Inisialisasi tombol bayar
+    const bg = document.getElementById('bayarGrid');
+    const coBg = document.getElementById('coBayarGrid');
+    CONFIG.metode_bayar.forEach(m => {
+        [bg, coBg].forEach(grid => {
+            const b = document.createElement('button');
+            b.className = 'bayar-btn' + (m === 'Cash' ? ' selected' : '');
+            b.textContent = m;
+            b.onclick = () => {
+                if (grid.id === 'bayarGrid') selectedBayar = m;
+                else selectedCoBayar = m;
+                grid.querySelectorAll('.bayar-btn').forEach(x => x.classList.toggle('selected', x.textContent === m));
+            };
+            grid.appendChild(b);
+        });
+    });
+
+    // Device-bound init: perangkat dikunci ke 1 unit hotel oleh owner
+    AuthUtils.initPage('hotel', (unitId, unitName) => {
+        const hotelIdx = CONFIG.hotels.findIndex(h => h.id === unitId);
+        activeUnit = hotelIdx >= 0 ? hotelIdx : 0;
+        currentUnitName = unitName;
+        const hotel = CONFIG.hotels[activeUnit];
+        document.getElementById('navTitle').textContent = 'Kasir — ' + (hotel?.shortName || unitName);
+        document.getElementById('unitBadge').textContent = '🏨 ' + unitName;
+        document.getElementById('shiftInfo').textContent = AuthUtils.getShiftLabel();
+        renderUnit(activeUnit);
+    });
+}
+
+function getStatus(kamarId) {
+    const raw = localStorage.getItem('hotel_' + kamarId);
+    return raw ? JSON.parse(raw) : { status: 'available' };
+}
+
+function renderUnit(i) {
+    const hotel = CONFIG.hotels[i];
+    const grid = document.getElementById('roomGrid');
+    grid.innerHTML = '';
+    let terisi = 0;
+
+    hotel.kamar.forEach(k => {
+        const st = getStatus(k.id);
+        const isOcc = st.status === 'occupied';
+        if (isOcc) terisi++;
+        const tipeColor = k.tipe === 'Standard' ? 'var(--hotel)' : k.tipe === 'Deluxe' ? 'var(--karaoke)' : 'var(--wahana)';
+        const tipeCode  = k.tipe === 'Standard' ? 'STD' : k.tipe === 'Deluxe' ? 'DLX' : 'STE';
+
+        const card = document.createElement('div');
+        card.className = 'room-card ' + (isOcc ? 'occupied' : 'available');
+        card.innerHTML = `
+            <div class="room-num">${k.nomor}</div>
+            <span style="font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;background:${tipeColor}18;color:${tipeColor}">${tipeCode}</span>
+            ${isOcc ? `<div class="room-guest">${st.nama_tamu || '—'}</div>` : ''}
+        `;
+        card.onclick = () => openRoom(k, st);
+        grid.appendChild(card);
+    });
+
+    const total = hotel.kamar.length;
+    document.getElementById('occUsed').textContent = terisi;
+    document.getElementById('occFree').textContent = total - terisi;
+    document.getElementById('occBar').style.width = (terisi / total * 100) + '%';
+}
+
+function openRoom(kamar, st) {
+    activeKamar = kamar;
+    if (st.status === 'available') {
+        document.getElementById('modalTitle').textContent = 'Kamar ' + kamar.nomor;
+        document.getElementById('modalSubtitle').textContent = kamar.tipe + ' — Rp ' + kamar.harga.toLocaleString('id-ID') + '/malam';
+        document.getElementById('inputNama').value = '';
+        document.getElementById('inputMalam').value = 1;
+        hitungTotal();
+        document.getElementById('modalCheckin').classList.add('show');
+    } else {
+        document.getElementById('coTitle').textContent = 'Kamar ' + kamar.nomor + ' — Check Out';
+        document.getElementById('coSubtitle').textContent = kamar.tipe;
+        document.getElementById('coNama').textContent = st.nama_tamu || '—';
+        document.getElementById('coWaktuIn').textContent = st.jam_checkin || '—';
+        document.getElementById('coTotal').textContent = 'Rp ' + (st.nominal || 0).toLocaleString('id-ID');
+        document.getElementById('coFnbAmount').value = '';
+        document.getElementById('fnbWalkIn').checked = true;
+        document.getElementById('fnbContextLabel').textContent = '🚶 Tidak ada tagihan F&B';
+        document.getElementById('fnbLinkedFields').style.display = 'none';
+        document.getElementById('coGrandTotal').textContent = 'Rp ' + (st.nominal || 0).toLocaleString('id-ID');
+        document.getElementById('modalCheckout').classList.add('show');
+    }
+}
+
+function hitungTotal() {
+    if (!activeKamar) return;
+    const malam = parseInt(document.getElementById('inputMalam').value) || 1;
+    document.getElementById('labelTotal').textContent = 'Rp ' + (activeKamar.harga * malam).toLocaleString('id-ID');
+}
+
+function updateCheckoutTotal() {
+    const st = getStatus(activeKamar?.id);
+    const roomTotal = st.nominal || 0;
+    const fnb = parseInt(document.getElementById('coFnbAmount')?.value) || 0;
+    document.getElementById('coGrandTotal').textContent = 'Rp ' + (roomTotal + fnb).toLocaleString('id-ID');
+}
+
+function closeModal() {
+    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('show'));
+}
+
+async function doCheckin() {
+    const nama = document.getElementById('inputNama').value.trim();
+    if (!nama) { alert('Nama tamu wajib diisi'); return; }
+    const malam = parseInt(document.getElementById('inputMalam').value) || 1;
+    const nominal = activeKamar.harga * malam;
+    const now = new Date();
+
+    const data = { status: 'occupied', nama_tamu: nama, jam_checkin: now.toLocaleString('id-ID'), jumlah_malam: malam, nominal, metode_bayar: selectedBayar };
+    localStorage.setItem('hotel_' + activeKamar.id, JSON.stringify(data));
+    closeModal();
+    renderUnit(activeUnit);
+
+    const payload = {
+        timestamp: now.toISOString(), unit: currentUnitName,
+        aksi: 'CHECK_IN', nomor_kamar: activeKamar.nomor, tipe_kamar: activeKamar.tipe,
+        nama_tamu: nama, jumlah_malam: malam, nominal, metode_bayar: selectedBayar,
+        ...AuthUtils.getAuthPayload(),
+    };
+    SyncQueue.push(CONFIG.tables.hotel, payload);
+    showToast('✅ Check In Kamar ' + activeKamar.nomor + ' berhasil!', 'success');
+}
+
+async function doCheckout() {
+    const st = getStatus(activeKamar.id);
+    const fnb = parseInt(document.getElementById('coFnbAmount')?.value) || 0;
+    const hasFnb = !document.getElementById('fnbWalkIn').checked;
+    const now = new Date();
+
+    localStorage.removeItem('hotel_' + activeKamar.id);
+    closeModal();
+    renderUnit(activeUnit);
+
+    const payload = {
+        timestamp: now.toISOString(), unit: currentUnitName,
+        aksi: 'CHECK_OUT', nomor_kamar: activeKamar.nomor, tipe_kamar: activeKamar.tipe,
+        nama_tamu: st.nama_tamu, jam_checkin: st.jam_checkin,
+        nominal: st.nominal || 0, nominal_fnb: hasFnb ? fnb : 0,
+        metode_bayar: selectedCoBayar, ...AuthUtils.getAuthPayload(),
+    };
+    SyncQueue.push(CONFIG.tables.hotel, payload);
+    showToast('✅ Check Out Kamar ' + activeKamar.nomor + ' berhasil!', 'success');
+}
+
+async function handleClosingSubmit() {
+    const pin = prompt('Masukkan PIN Kasir untuk konfirmasi:');
+    if (!pin) return;
+    const actual = parseInt(document.getElementById('actualCashInput').value) || 0;
+    const notes = document.getElementById('closingNotes').value;
+
+    // Tampilkan expected cash
+    const shift = AuthUtils.getAutoShift();
+    document.getElementById('closingShiftLabel').textContent = AuthUtils.getShiftLabel();
+    const expected = await ClosingUtils.calculateExpectedCash(currentUnitName, shift);
+    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + expected.toLocaleString('id-ID');
+
+    const res = await ClosingUtils.submit(currentUnitName, pin, actual, notes);
+    if (res.ok) {
+        alert('✅ Tutup kasir berhasil disimpan!');
+        document.getElementById('modalClosing').classList.remove('show');
+    } else {
+        alert('❌ Gagal menyimpan: ' + (res.error || 'Unknown error'));
+    }
+}
+
+// Inisialisasi expected cash saat modal closing dibuka
+document.getElementById('modalClosing').addEventListener('animationstart', async () => {
+    const shift = AuthUtils.getAutoShift();
+    document.getElementById('closingShiftLabel').textContent = AuthUtils.getShiftLabel();
+    const expected = await ClosingUtils.calculateExpectedCash(currentUnitName, shift);
+    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + expected.toLocaleString('id-ID');
+});
+
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+init();
+</script>
+</body>
+</html>

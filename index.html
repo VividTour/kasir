@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kasir — Pancoran Group</title>
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Kasir">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .index-hero h1 span { color: var(--primary); }
+        .index-hero .brand  { font-size: 12px; font-weight: 600; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; margin-bottom: 12px; }
+        .stats-bar {
+            display: flex; justify-content: center; gap: 40px;
+            padding: 20px 24px; margin: 0 auto 32px;
+            max-width: 560px;
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: var(--radius); box-shadow: var(--shadow);
+        }
+        .stat-item { text-align: center; }
+        .stat-item .n { font-size: 28px; font-weight: 800; }
+        .stat-item .l { font-size: 11px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-item.h .n { color: var(--hotel); }
+        .stat-item.k .n { color: var(--karaoke); }
+        .stat-item.w .n { color: var(--wahana); }
+        .stat-item.f .n { color: var(--fnb); }
+        .clock { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 32px; }
+        .module-card.hotel   h3 { color: var(--hotel); }
+        .module-card.karaoke h3 { color: var(--karaoke); }
+        .module-card.wahana  h3 { color: var(--wahana); }
+        .module-card.fnb     h3 { color: var(--fnb); }
+        .module-card.dashboard h3 { color: var(--primary); }
+        .module-card.dashboard { border-top: 3px solid var(--primary); }
+        .module-grid { grid-template-columns: repeat(2, 1fr); }
+        @media (min-width: 700px) { .module-grid { grid-template-columns: repeat(3, 1fr); max-width: 900px; } }
+    </style>
+</head>
+<body>
+
+<div class="index-hero">
+    <p class="brand">Pancoran Group</p>
+    <h1>Sistem <span>Kasir</span></h1>
+    <p>Pilih modul untuk memulai pencatatan transaksi</p>
+</div>
+
+<div class="clock" id="clock"></div>
+
+<div class="stats-bar" id="statsBar">
+    <div class="stat-item h"><div class="n" id="s-hotel">5</div><div class="l">Hotel</div></div>
+    <div class="stat-item k"><div class="n" id="s-karaoke">4</div><div class="l">Karaoke</div></div>
+    <div class="stat-item w"><div class="n" id="s-wahana">2</div><div class="l">Wahana</div></div>
+    <div class="stat-item f"><div class="n" id="s-fnb">F&B</div><div class="l">F&B Unit</div></div>
+</div>
+
+<div class="module-grid" style="max-width:900px;margin:0 auto;padding:0 24px 48px">
+    <div class="module-card hotel" onclick="window.location.href='kasir-hotel.html'">
+        <div class="icon">🏨</div>
+        <h3>Hotel</h3>
+        <p>5 unit hotel — Srono, Pancoran, Royal Inn, Gumukmas, Besuki</p>
+    </div>
+    <div class="module-card karaoke" onclick="window.location.href='kasir-karaoke.html'">
+        <div class="icon">🎤</div>
+        <h3>Karaoke</h3>
+        <p>4 unit karaoke — sesi, F&B, dan sistem free room</p>
+    </div>
+    <div class="module-card wahana" onclick="window.location.href='kasir-wahana.html'">
+        <div class="icon">🎢</div>
+        <h3>Wahana</h3>
+        <p>Waterpark & Nature Adventure — penjualan tiket masuk</p>
+    </div>
+    <div class="module-card fnb" onclick="window.location.href='kasir-fnb.html'">
+        <div class="icon">🍽️</div>
+        <h3>F&B</h3>
+        <p>Pesanan makanan & minuman — walk-in dan tamu hotel/karaoke</p>
+    </div>
+    <div class="module-card dashboard" onclick="window.location.href='dashboard.html'">
+        <div class="icon">📊</div>
+        <h3>Dashboard</h3>
+        <p>Laporan manajemen — revenue, closing shift, audit trail</p>
+    </div>
+</div>
+
+<script>
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('clock').textContent =
+            now.toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) +
+            '  •  ' + now.toLocaleTimeString('id-ID');
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js')
+            .then(() => console.log('[PWA] Service Worker terdaftar'))
+            .catch(e => console.warn('[PWA] Gagal register SW:', e));
+    }
+</script>
+</body>
+</html>

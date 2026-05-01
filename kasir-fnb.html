@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kasir F&B — Pancoran Group</title>
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Kasir F&B">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script src="config.js"></script>
+    <script src="auth-utils.js"></script>
+    <script src="supabase.js"></script>
+    <script src="sync.js"></script>
+    <script src="fnb-context.js"></script>
+    <script src="closing-utils.js"></script>
+    <style>
+        :root { --accent: var(--fnb); --accent-rgb: 234,88,12; }
+        .unit-tab.active { background: var(--fnb); border-color: var(--fnb); color: #fff; }
+        .btn-primary { background: var(--fnb); }
+        .total-box { border-color: var(--fnb); }
+        .total-box .val { color: var(--fnb); }
+        .cat-tab.active, .cat-tab:hover { background: var(--fnb); border-color: var(--fnb); color: #fff; }
+        .bayar-btn.selected { border-color: var(--fnb); color: var(--fnb); }
+        .menu-item:hover { border-color: var(--fnb); }
+        .menu-item .m-price { color: var(--fnb); }
+        .layout-wrapper { display: grid; grid-template-columns: 1fr 320px; gap: 20px; align-items: start; }
+        .cart-panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; position: sticky; top: 80px; box-shadow: var(--shadow); }
+        .cart-panel h3 { font-size: 16px; font-weight: 700; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+        .unit-select-wrap { margin-bottom: 20px; }
+        .unit-select-wrap label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+        .unit-select-wrap select { width: 100%; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; font-size: 15px; font-family: 'Outfit', sans-serif; color: var(--text); outline: none; }
+        .menu-item { position: relative; }
+        .menu-item .qty-badge { position: absolute; top: -6px; right: -6px; background: var(--fnb); color: #fff; font-size: 11px; font-weight: 700; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .cart-item-del { background: none; border: none; color: var(--occupied); cursor: pointer; font-size: 14px; padding: 0 4px; }
+        .section-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; margin-top: 4px; }
+        @media (max-width: 700px) { .layout-wrapper { grid-template-columns: 1fr; } .cart-panel { position: static; } }
+    </style>
+</head>
+<body>
+<nav class="navbar">
+    <button class="navbar-back" onclick="window.location.href='index.html'">← Kembali</button>
+    <span class="navbar-dot dot-fnb"></span>
+    <span class="navbar-title">Kasir F&B</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <span id="syncDot" style="width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block;transition:background 0.3s"></span>
+        <button id="syncBtn" class="navbar-back" onclick="SyncQueue.manualSync()">✓ Tersinkron</button>
+        <span id="syncBadge" style="display:none;background:#d97706;color:#fff;font-size:11px;font-weight:800;width:20px;height:20px;border-radius:50%;align-items:center;justify-content:center;">0</span>
+        <button class="navbar-back" onclick="showClosingModal()" title="Tutup Kasir">🔒</button>
+    </div>
+</nav>
+
+<div class="page">
+    <div class="unit-select-wrap">
+        <label>Pesanan untuk Unit</label>
+        <select id="unitSelect" onchange="onUnitChange()">
+            <option value="" disabled selected>— Pilih Unit Bisnis —</option>
+        </select>
+    </div>
+
+    <!-- F&B Context Toggle (Walk-in vs Tamu) -->
+    <div class="fnb-toggle-box" id="fnbToggleBox" style="display:none">
+        <label class="fnb-toggle-label">
+            <input type="checkbox" id="fnbWalkIn" checked onchange="FnbContext.toggleUI()">
+            <span id="fnbContextLabel">🚶 Walk-in (Pelanggan Umum)</span>
+        </label>
+        <div class="fnb-linked-fields" id="fnbLinkedFields">
+            <input type="text" id="fnbRoom" placeholder="No. Kamar / Ruangan">
+            <input type="text" id="fnbGuest" placeholder="Nama Tamu">
+        </div>
+    </div>
+
+    <div class="layout-wrapper">
+        <div>
+            <div class="category-tabs" id="catTabs"></div>
+            <div class="menu-grid" id="menuGrid">
+                <div style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px 0">Pilih unit bisnis terlebih dahulu</div>
+            </div>
+        </div>
+        <div class="cart-panel">
+            <h3>🛒 Keranjang Pesanan</h3>
+            <div id="cartItems"><div class="cart-empty">Belum ada pesanan</div></div>
+            <div id="cartBottom" style="display:none;margin-top:12px">
+                <div class="total-box" style="margin-bottom:14px"><div class="lbl">TOTAL</div><div class="val" id="cartTotal">Rp 0</div></div>
+                <div class="form-group"><label>Metode Pembayaran</label><div class="bayar-grid" id="bayarGrid" style="grid-template-columns:repeat(3,1fr)"></div></div>
+                <button class="btn btn-primary" id="btnBayar" onclick="prosesBayar()">✓ Proses Pembayaran</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CLOSING SHIFT -->
+<div class="modal-overlay" id="modalClosing">
+    <div class="closing-modal">
+        <h3>🔒 Tutup Kasir F&B</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px" id="closingUnitName">—</p>
+        <div class="closing-stat-row"><span class="lbl">Shift</span><span class="val" id="closingShiftLabel">—</span></div>
+        <div class="closing-stat-row"><span class="lbl">Total Cash Sistem</span><span class="val" id="expectedCashDisplay">Rp 0</span></div>
+        <div class="form-group" style="margin-top:14px">
+            <label>Hitung Fisik (Rp)</label>
+            <input type="number" id="actualCashInput" placeholder="Jumlah uang fisik" oninput="ClosingUtils.previewDiff()">
+        </div>
+        <div class="diff-preview" id="diffPreview"></div>
+        <div class="form-group">
+            <label>Catatan (opsional)</label>
+            <textarea id="closingNotes" rows="2" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:'Outfit',sans-serif;font-size:14px;resize:none;" placeholder="Catatan selisih..."></textarea>
+        </div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('modalClosing').classList.remove('show')">Batal</button>
+            <button class="btn-closing" style="flex:1;margin:0" onclick="handleClosingSubmit()">✓ Konfirmasi Tutup</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let cart = {}, activeCategory = 'Semua', selectedBayar = 'Cash', selectedUnit = null, currentUnitName = '';
+
+// Build dropdown opsi unit
+const UNIT_OPTIONS = [
+    ...CONFIG.hotels.map(h  => ({ value: h.id, label: h.nama, type: 'hotel'   })),
+    ...CONFIG.karaokes.map(k => ({ value: k.id, label: k.nama, type: 'karaoke' })),
+    ...CONFIG.wahanas.map(w  => ({ value: w.id, label: w.nama, type: 'wahana'  })),
+    { value: 'standalone', label: 'Standalone (Walk-in Langsung)', type: 'standalone' },
+];
+
+function init() {
+    const sel = document.getElementById('unitSelect');
+
+    // Grup per tipe
+    const groups = { hotel: 'Hotel', karaoke: 'Karaoke', wahana: 'Wahana', standalone: 'Lainnya' };
+    const grouped = {};
+    UNIT_OPTIONS.forEach(u => { if (!grouped[u.type]) grouped[u.type] = []; grouped[u.type].push(u); });
+    Object.entries(grouped).forEach(([type, units]) => {
+        const optGroup = document.createElement('optgroup');
+        optGroup.label = groups[type];
+        units.forEach(u => {
+            const opt = document.createElement('option');
+            opt.value = u.value;
+            opt.textContent = u.label;
+            optGroup.appendChild(opt);
+        });
+        sel.appendChild(optGroup);
+    });
+
+    const bg = document.getElementById('bayarGrid');
+    CONFIG.metode_bayar.forEach(m => {
+        const b = document.createElement('button');
+        b.className = 'bayar-btn' + (m === 'Cash' ? ' selected' : '');
+        b.textContent = m;
+        b.onclick = () => { selectedBayar = m; bg.querySelectorAll('.bayar-btn').forEach(x => x.classList.toggle('selected', x.textContent === m)); };
+        bg.appendChild(b);
+    });
+
+    // PIN — kasir FnB bisa pilih unit mana saja setelah auth
+    // Tampilkan PIN modal menggunakan unit yang tersimpan di session, atau minta pilih dulu
+    const savedUnit = sessionStorage.getItem('kasir_unit');
+    const matchedUnit = UNIT_OPTIONS.find(u => u.value === savedUnit);
+    if (matchedUnit && CONFIG.pins[savedUnit]) {
+        // Jika unit sudah di-auth sebelumnya, langsung lanjut
+        selectedUnit = savedUnit;
+        currentUnitName = matchedUnit.label;
+        sel.value = savedUnit;
+        document.getElementById('fnbToggleBox').style.display = 'block';
+        renderMenu();
+    } else {
+        // Tampilkan PIN master untuk akses F&B standalone
+        showFnbPinModal();
+    }
+}
+
+function showFnbPinModal() {
+    // Gunakan PIN master untuk akses modul F&B umum
+    const overlay = document.createElement('div');
+    overlay.className = 'pin-modal-overlay';
+    overlay.id = 'fnbPinOverlay';
+    overlay.innerHTML = `
+        <div class="pin-modal">
+            <div class="pin-modal-icon">🍽️</div>
+            <h2 class="pin-modal-title">Kasir F&B</h2>
+            <p class="pin-modal-subtitle">${AuthUtils.getShiftLabel()}</p>
+            <div class="pin-display">
+                <span class="pin-dot" id="fpd0"></span><span class="pin-dot" id="fpd1"></span>
+                <span class="pin-dot" id="fpd2"></span><span class="pin-dot" id="fpd3"></span>
+                <span class="pin-dot" id="fpd4"></span><span class="pin-dot" id="fpd5"></span>
+            </div>
+            <p class="pin-error" id="fnbPinError" style="display:none">❌ PIN salah. Coba lagi.</p>
+            <div class="pin-keypad">
+                ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+                    <button class="pin-key${k===''?' pin-key-empty':''}" ${k===''?'disabled':''} onclick="fnbPinKey('${k}')">${k}</button>
+                `).join('')}
+            </div>
+            <p class="pin-footer">Masukkan PIN unit atau PIN master</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+let _fnbPinBuf = '';
+function fnbPinKey(k) {
+    if (k === '⌫') _fnbPinBuf = _fnbPinBuf.slice(0, -1);
+    else if (_fnbPinBuf.length < 6 && k !== '') _fnbPinBuf += k;
+    for (let i = 0; i < 6; i++) {
+        const d = document.getElementById('fpd' + i);
+        if (d) d.classList.toggle('filled', i < _fnbPinBuf.length);
+    }
+    if (_fnbPinBuf.length === 6) fnbPinSubmit();
+}
+
+async function fnbPinSubmit() {
+    const hash = await AuthUtils.hashPin(_fnbPinBuf);
+    // Cek apakah cocok dengan salah satu unit atau master
+    let matchedUnitId = null;
+    for (const [uid, h] of Object.entries(CONFIG.pins)) {
+        if (h === hash) { matchedUnitId = uid; break; }
+    }
+    if (matchedUnitId) {
+        AuthUtils.setSession(matchedUnitId, hash);
+        document.getElementById('fnbPinOverlay')?.remove();
+        if (matchedUnitId !== 'master') {
+            const unit = UNIT_OPTIONS.find(u => u.value === matchedUnitId);
+            if (unit) {
+                selectedUnit = matchedUnitId;
+                currentUnitName = unit.label;
+                document.getElementById('unitSelect').value = matchedUnitId;
+                document.getElementById('fnbToggleBox').style.display = 'block';
+                renderMenu();
+            }
+        }
+    } else {
+        const errEl = document.getElementById('fnbPinError');
+        if (errEl) errEl.style.display = 'block';
+        for (let i = 0; i < 6; i++) {
+            const d = document.getElementById('fpd' + i);
+            if (d) d.classList.add('error');
+        }
+        _fnbPinBuf = '';
+        setTimeout(() => {
+            if (errEl) errEl.style.display = 'none';
+            for (let i = 0; i < 6; i++) {
+                const d = document.getElementById('fpd' + i);
+                if (d) d.classList.remove('error', 'filled');
+            }
+        }, 1500);
+    }
+}
+
+function onUnitChange() {
+    const sel = document.getElementById('unitSelect');
+    selectedUnit = sel.value;
+    const unit = UNIT_OPTIONS.find(u => u.value === selectedUnit);
+    currentUnitName = unit?.label || selectedUnit;
+    cart = {};
+    activeCategory = 'Semua';
+    document.getElementById('fnbToggleBox').style.display = selectedUnit ? 'block' : 'none';
+
+    // Update source context label
+    if (unit?.type === 'hotel') document.getElementById('fnbContextLabel').textContent = '🚶 Walk-in (bukan tamu kamar)';
+    else if (unit?.type === 'karaoke') document.getElementById('fnbContextLabel').textContent = '🚶 Walk-in (bukan tamu ruangan)';
+    else document.getElementById('fnbContextLabel').textContent = '🚶 Walk-in (Pelanggan Umum)';
+
+    document.getElementById('fnbWalkIn').checked = true;
+    document.getElementById('fnbLinkedFields').style.display = 'none';
+    renderMenu();
+    renderCart();
+}
+
+function renderMenu() {
+    if (!selectedUnit) return;
+    const filteredMenu = CONFIG.menu_fnb.filter(item => item.unit.includes('all') || item.unit.includes(selectedUnit));
+    const categories = ['Semua', ...new Set(filteredMenu.map(m => m.kategori))];
+    const catTabs = document.getElementById('catTabs');
+    catTabs.innerHTML = '';
+    categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = 'cat-tab' + (cat === activeCategory ? ' active' : '');
+        btn.textContent = cat;
+        btn.onclick = () => { activeCategory = cat; renderMenu(); };
+        catTabs.appendChild(btn);
+    });
+    const grid = document.getElementById('menuGrid');
+    grid.innerHTML = '';
+    const display = activeCategory === 'Semua' ? filteredMenu : filteredMenu.filter(m => m.kategori === activeCategory);
+    if (!display.length) {
+        grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px 0">Tidak ada menu</div>';
+        return;
+    }
+    display.forEach(item => {
+        const qtyInCart = cart[item.id]?.qty || 0;
+        const card = document.createElement('div');
+        card.className = 'menu-item';
+        card.innerHTML = `
+            ${qtyInCart > 0 ? `<div class="qty-badge">${qtyInCart}</div>` : ''}
+            <div class="m-name">${item.nama}</div>
+            <div class="m-price">Rp ${item.harga.toLocaleString('id-ID')}</div>
+        `;
+        card.onclick = () => addToCart(item);
+        grid.appendChild(card);
+    });
+}
+
+function addToCart(item) {
+    if (!selectedUnit) { showToast('Pilih unit terlebih dahulu', 'error'); return; }
+    if (!cart[item.id]) cart[item.id] = { item, qty: 0 };
+    cart[item.id].qty++;
+    renderCart(); renderMenu();
+}
+
+function removeFromCart(itemId) {
+    if (!cart[itemId]) return;
+    cart[itemId].qty--;
+    if (cart[itemId].qty <= 0) delete cart[itemId];
+    renderCart(); renderMenu();
+}
+
+function renderCart() {
+    const container = document.getElementById('cartItems');
+    const items = Object.values(cart);
+    if (!items.length) {
+        container.innerHTML = '<div class="cart-empty">Belum ada pesanan</div>';
+        document.getElementById('cartBottom').style.display = 'none';
+        return;
+    }
+    let total = 0;
+    container.innerHTML = '';
+    items.forEach(({ item, qty }) => {
+        const sub = item.harga * qty;
+        total += sub;
+        const row = document.createElement('div');
+        row.className = 'cart-item';
+        row.innerHTML = `
+            <div class="cart-item-name">${item.nama}</div>
+            <div class="cart-item-qty">
+                <button class="cart-qty-btn" onclick="removeFromCart('${item.id}')">−</button>
+                <span>${qty}</span>
+                <button class="cart-qty-btn" onclick="addToCart(${JSON.stringify(item).replace(/"/g,'&quot;')})">+</button>
+            </div>
+            <div class="cart-item-sub">Rp ${sub.toLocaleString('id-ID')}</div>
+        `;
+        container.appendChild(row);
+    });
+    document.getElementById('cartTotal').textContent = 'Rp ' + total.toLocaleString('id-ID');
+    document.getElementById('cartBottom').style.display = 'block';
+}
+
+function prosesBayar() {
+    const items = Object.values(cart);
+    if (!items.length || !selectedUnit) return;
+    const btn = document.getElementById('btnBayar');
+    btn.disabled = true; btn.textContent = 'Memproses...';
+
+    const total = items.reduce((s, { item, qty }) => s + item.harga * qty, 0);
+    const now = new Date();
+    const fnbCtx = FnbContext.getPayload(
+        selectedUnit.startsWith('hotel') ? 'hotel' :
+        selectedUnit.startsWith('karaoke') ? 'karaoke' : 'standalone'
+    );
+
+    SyncQueue.push(CONFIG.tables.fnb, {
+        timestamp: now.toISOString(), unit: currentUnitName, modul: 'F&B',
+        items: items.map(({ item, qty }) => ({ id: item.id, nama: item.nama, qty, harga: item.harga, subtotal: item.harga * qty })),
+        total, metode_bayar: selectedBayar,
+        ...fnbCtx, ...AuthUtils.getAuthPayload(),
+    });
+
+    showToast('✅ Pesanan berhasil! Total Rp ' + total.toLocaleString('id-ID'), 'success');
+    cart = {};
+    renderCart(); renderMenu();
+    setTimeout(() => { btn.disabled = false; btn.textContent = '✓ Proses Pembayaran'; }, 2000);
+}
+
+function showClosingModal() {
+    if (!currentUnitName) { showToast('Pilih unit terlebih dahulu', 'error'); return; }
+    document.getElementById('closingUnitName').textContent = currentUnitName;
+    document.getElementById('closingShiftLabel').textContent = AuthUtils.getShiftLabel();
+    document.getElementById('modalClosing').classList.add('show');
+    ClosingUtils.calculateExpectedCash(currentUnitName, AuthUtils.getAutoShift()).then(exp => {
+        document.getElementById('expectedCashDisplay').textContent = 'Rp ' + exp.toLocaleString('id-ID');
+    });
+}
+
+async function handleClosingSubmit() {
+    const pin = prompt('Masukkan PIN Kasir untuk konfirmasi:');
+    if (!pin) return;
+    const actual = parseInt(document.getElementById('actualCashInput').value) || 0;
+    const notes = document.getElementById('closingNotes').value;
+    const res = await ClosingUtils.submit(currentUnitName, pin, actual, notes);
+    if (res.ok) { alert('✅ Tutup kasir berhasil!'); document.getElementById('modalClosing').classList.remove('show'); }
+    else alert('❌ Gagal: ' + (res.error || 'Unknown'));
+}
+
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+init();
+</script>
+</body>
+</html>

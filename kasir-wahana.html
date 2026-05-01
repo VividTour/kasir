@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kasir Wahana — Pancoran Group</title>
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Kasir Wahana">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script src="config.js"></script>
+    <script src="auth-utils.js"></script>
+    <script src="supabase.js"></script>
+    <script src="sync.js"></script>
+    <script src="closing-utils.js"></script>
+    <style>
+        :root { --accent: var(--wahana); --accent-rgb: 8,145,178; }
+        .unit-tab.active { background: var(--wahana); border-color: var(--wahana); color: #fff; }
+        .btn-primary { background: var(--wahana); }
+        .total-box { border-color: var(--wahana); }
+        .total-box .val { color: var(--wahana); }
+        .bayar-btn.selected { border-color: var(--wahana); color: var(--wahana); }
+        .wahana-header { background: rgba(8,145,178,0.06); border: 1px solid rgba(8,145,178,0.2); border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 24px; }
+        .wahana-header h2 { font-size: 22px; font-weight: 800; color: var(--wahana); }
+        .wahana-header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+        .summary-section { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+        .summary-row { display: flex; justify-content: space-between; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+        .summary-row:last-child { border-bottom: none; }
+        .summary-row .label { color: var(--muted); }
+        .summary-row .value { font-weight: 600; }
+    </style>
+</head>
+<body>
+<nav class="navbar">
+    <button class="navbar-back" onclick="window.location.href='index.html'">← Kembali</button>
+    <span class="navbar-dot dot-wahana"></span>
+    <span class="navbar-title" id="navTitle">Kasir Wahana</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <span id="syncDot" style="width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block;transition:background 0.3s"></span>
+        <button id="syncBtn" class="navbar-back" onclick="SyncQueue.manualSync()">✓ Tersinkron</button>
+        <span id="syncBadge" style="display:none;background:#d97706;color:#fff;font-size:11px;font-weight:800;width:20px;height:20px;border-radius:50%;align-items:center;justify-content:center;">0</span>
+        <button class="navbar-back" onclick="ClosingUtils.showModal(currentUnitName)" title="Tutup Kasir">🔒</button>
+        <button class="navbar-back" onclick="AuthUtils.showRebindModal('wahana')" title="Ganti perangkat (Master PIN)">⚙️</button>
+    </div>
+</nav>
+
+<div class="page">
+    <div id="unitInfo" style="font-size:13px;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+        <span style="background:rgba(8,145,178,0.12);color:var(--wahana);padding:4px 10px;border-radius:99px;font-weight:700;font-size:12px" id="unitBadge"></span>
+        <span id="shiftInfo"></span>
+    </div>
+    <div class="wahana-header" id="wahanaHeader">
+        <div style="font-size:48px" id="wahanaIcon">🎢</div>
+        <h2 id="wahanaName">Wahana</h2>
+        <p id="wahanaDesc">Pilih jenis tiket dan jumlah pengunjung</p>
+    </div>
+    <div id="tiketContainer"></div>
+    <div class="summary-section" id="summarySection" style="display:none">
+        <div class="summary-row" id="rowDewasa"><span class="label">Tiket Dewasa</span><span class="value" id="sumDewasa">Rp 0</span></div>
+        <div class="summary-row" id="rowAnak"><span class="label">Tiket Anak-anak</span><span class="value" id="sumAnak">Rp 0</span></div>
+    </div>
+    <div class="total-box" id="totalBox" style="display:none"><div class="lbl">TOTAL PEMBAYARAN</div><div class="val" id="grandTotal">Rp 0</div></div>
+    <div id="paymentSection" style="display:none">
+        <div class="form-group"><label>Metode Pembayaran</label><div class="bayar-grid" id="bayarGrid"></div></div>
+        <button class="btn btn-primary" id="btnBayar" onclick="prosesBayar()">🎟️ Proses Tiket</button>
+    </div>
+</div>
+
+<!-- MODAL CLOSING SHIFT -->
+<div class="modal-overlay" id="modalClosing">
+    <div class="closing-modal">
+        <h3>🔒 Tutup Kasir</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px" id="closingUnitName">—</p>
+        <div class="closing-stat-row"><span class="lbl">Shift</span><span class="val" id="closingShiftLabel">—</span></div>
+        <div class="closing-stat-row"><span class="lbl">Total Cash Sistem</span><span class="val" id="expectedCashDisplay">Rp 0</span></div>
+        <div class="form-group" style="margin-top:14px">
+            <label>Hitung Fisik (Rp)</label>
+            <input type="number" id="actualCashInput" placeholder="Jumlah uang fisik" oninput="ClosingUtils.previewDiff()">
+        </div>
+        <div class="diff-preview" id="diffPreview"></div>
+        <div class="form-group">
+            <label>Catatan (opsional)</label>
+            <textarea id="closingNotes" rows="2" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:'Outfit',sans-serif;font-size:14px;resize:none;" placeholder="Catatan selisih..."></textarea>
+        </div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('modalClosing').classList.remove('show')">Batal</button>
+            <button class="btn-closing" style="flex:1;margin:0" onclick="handleClosingSubmit()">✓ Konfirmasi Tutup</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let activeUnit = 0, qtyCounts = {}, selectedBayar = 'Cash', currentUnitName = '';
+
+function init() {
+    const bg = document.getElementById('bayarGrid');
+    CONFIG.metode_bayar.forEach(m => {
+        const b = document.createElement('button');
+        b.className = 'bayar-btn' + (m === 'Cash' ? ' selected' : '');
+        b.textContent = m;
+        b.onclick = () => { selectedBayar = m; bg.querySelectorAll('.bayar-btn').forEach(x => x.classList.toggle('selected', x.textContent === m)); };
+        bg.appendChild(b);
+    });
+
+    // Device-bound init: perangkat dikunci ke 1 unit wahana oleh owner
+    AuthUtils.initPage('wahana', (unitId, unitName) => {
+        const wahanaIdx = CONFIG.wahanas.findIndex(w => w.id === unitId);
+        activeUnit = wahanaIdx >= 0 ? wahanaIdx : 0;
+        currentUnitName = unitName;
+        document.getElementById('navTitle').textContent = 'Kasir — ' + unitName;
+        document.getElementById('unitBadge').textContent = '🏆 ' + unitName;
+        document.getElementById('shiftInfo').textContent = AuthUtils.getShiftLabel();
+        renderUnit(activeUnit);
+    });
+}
+
+function renderUnit(i) {
+    const wahana = CONFIG.wahanas[i];
+    qtyCounts = {};
+    document.getElementById('wahanaName').textContent = wahana.nama;
+    document.getElementById('wahanaIcon').textContent = wahana.id === 'wahana-1' ? '🏊' : '🌿';
+    wahana.tiket.forEach(t => qtyCounts[t.tipe] = 0);
+    const container = document.getElementById('tiketContainer');
+    container.innerHTML = '';
+    wahana.tiket.forEach(tiket => {
+        const icon = tiket.tipe === 'Dewasa' ? '🧑' : '👦';
+        const section = document.createElement('div');
+        section.className = 'ticket-section';
+        section.innerHTML = `<div class="ticket-row">
+            <div class="ticket-info">
+                <div style="font-size:28px;margin-bottom:4px">${icon}</div>
+                <div class="tipe" style="font-size:18px;font-weight:800">${tiket.tipe}</div>
+                <div class="harga" style="color:var(--wahana);font-weight:700">Rp ${tiket.harga.toLocaleString('id-ID')}</div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+                <div class="stepper">
+                    <button class="stepper-btn" onclick="changeQty('${tiket.tipe}',-1)">−</button>
+                    <div class="stepper-val" id="qty-${tiket.tipe}">0</div>
+                    <button class="stepper-btn" onclick="changeQty('${tiket.tipe}',1)">+</button>
+                </div>
+                <div class="ticket-subtotal" id="sub-${tiket.tipe}" style="color:var(--wahana)">Rp 0</div>
+            </div>
+        </div>`;
+        container.appendChild(section);
+    });
+    updateTotal();
+}
+
+function changeQty(tipe, delta) {
+    qtyCounts[tipe] = Math.max(0, (qtyCounts[tipe] || 0) + delta);
+    document.getElementById('qty-' + tipe).textContent = qtyCounts[tipe];
+    const tiket = CONFIG.wahanas[activeUnit].tiket.find(t => t.tipe === tipe);
+    const sub = qtyCounts[tipe] * tiket.harga;
+    document.getElementById('sub-' + tipe).textContent = 'Rp ' + sub.toLocaleString('id-ID');
+    updateTotal();
+}
+
+function updateTotal() {
+    const wahana = CONFIG.wahanas[activeUnit];
+    let grand = 0;
+    wahana.tiket.forEach(t => { grand += (qtyCounts[t.tipe] || 0) * t.harga; });
+    const hasItem = grand > 0;
+    document.getElementById('summarySection').style.display = hasItem ? 'block' : 'none';
+    document.getElementById('totalBox').style.display = hasItem ? 'flex' : 'none';
+    document.getElementById('paymentSection').style.display = hasItem ? 'block' : 'none';
+    document.getElementById('grandTotal').textContent = 'Rp ' + grand.toLocaleString('id-ID');
+    wahana.tiket.forEach(t => {
+        const rowId = t.tipe === 'Dewasa' ? 'rowDewasa' : 'rowAnak';
+        const sumId = t.tipe === 'Dewasa' ? 'sumDewasa' : 'sumAnak';
+        const qty = qtyCounts[t.tipe] || 0;
+        document.getElementById(rowId).style.display = qty > 0 ? 'flex' : 'none';
+        document.getElementById(sumId).textContent = qty + ' × Rp ' + t.harga.toLocaleString('id-ID') + ' = Rp ' + (qty * t.harga).toLocaleString('id-ID');
+    });
+}
+
+function prosesBayar() {
+    const wahana = CONFIG.wahanas[activeUnit];
+    let grand = 0;
+    const items = [];
+    wahana.tiket.forEach(t => {
+        const qty = qtyCounts[t.tipe] || 0;
+        if (qty > 0) { items.push({ tipe: t.tipe, qty, harga_satuan: t.harga, subtotal: qty * t.harga }); grand += qty * t.harga; }
+    });
+    if (grand === 0) return;
+    const btn = document.getElementById('btnBayar');
+    btn.disabled = true; btn.textContent = 'Memproses...';
+    const now = new Date();
+    SyncQueue.push(CONFIG.tables.wahana, {
+        timestamp: now.toISOString(), unit: currentUnitName,
+        items, total: grand, metode_bayar: selectedBayar,
+        ...AuthUtils.getAuthPayload(),
+    });
+    showToast('🎟️ ' + items.map(i => i.qty + ' tiket ' + i.tipe).join(', ') + ' — Rp ' + grand.toLocaleString('id-ID'), 'success');
+    setTimeout(() => { renderUnit(activeUnit); btn.disabled = false; btn.textContent = '🎟️ Proses Tiket'; }, 2000);
+}
+
+async function handleClosingSubmit() {
+    const pin = prompt('Masukkan PIN Kasir untuk konfirmasi:');
+    if (!pin) return;
+    const actual = parseInt(document.getElementById('actualCashInput').value) || 0;
+    const notes = document.getElementById('closingNotes').value;
+    const res = await ClosingUtils.submit(currentUnitName, pin, actual, notes);
+    if (res.ok) { alert('✅ Tutup kasir berhasil!'); document.getElementById('modalClosing').classList.remove('show'); }
+    else alert('❌ Gagal: ' + (res.error || 'Unknown'));
+}
+
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+init();
+</script>
+</body>
+</html>

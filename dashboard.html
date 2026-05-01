@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Owner — Pancoran Group</title>
+    <meta name="theme-color" content="#ffffff">
+    <link rel="stylesheet" href="style.css">
+    <script src="config.js"></script>
+    <script src="auth-utils.js"></script>
+    <script src="supabase.js"></script>
+    <style>
+        .dash-header-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+        .dash-logo { font-size: 18px; font-weight: 800; }
+        .dash-logo span { color: var(--primary); }
+        .dash-shift-badge { background: rgba(37,99,235,0.1); color: var(--primary); padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 700; }
+        .dash-logout { margin-left: auto; padding: 8px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; font-family: 'Outfit', sans-serif; }
+    </style>
+</head>
+<body>
+
+<div id="dashContent" style="display:none">
+    <!-- HEADER -->
+    <div class="dash-header-bar">
+        <div class="dash-logo">Pancoran <span>Dashboard</span></div>
+        <span class="dash-shift-badge" id="shiftBadge">Shift Pagi</span>
+        <span style="font-size:13px;color:var(--muted)" id="dateLabel"></span>
+        <button class="dash-logout" onclick="logout()">🚪 Keluar</button>
+    </div>
+
+    <div class="dash-page">
+
+        <!-- STAT CARDS -->
+        <div class="dash-grid" id="statCards">
+            <div class="dash-card">
+                <div class="dc-label">Total Revenue Hari Ini</div>
+                <div class="dc-val" id="statRevenue" style="color:var(--primary)">—</div>
+                <div class="dc-sub">Semua unit & metode bayar</div>
+            </div>
+            <div class="dash-card">
+                <div class="dc-label">Transaksi Cash</div>
+                <div class="dc-val" id="statCash" style="color:var(--available)">—</div>
+                <div class="dc-sub">Total transaksi cash hari ini</div>
+            </div>
+            <div class="dash-card">
+                <div class="dc-label">Closing Bermasalah</div>
+                <div class="dc-val" id="statAlert" style="color:var(--occupied)">—</div>
+                <div class="dc-sub">Shift dengan selisih cash ≠ 0</div>
+            </div>
+            <div class="dash-card">
+                <div class="dc-label">Free Room Aktif</div>
+                <div class="dc-val" id="statFreeRoom" style="color:var(--karaoke)">—</div>
+                <div class="dc-sub">Karaoke free room hari ini</div>
+            </div>
+        </div>
+
+        <!-- FILTER -->
+        <div class="dash-filter">
+            <div>
+                <label>Tanggal</label>
+                <input type="date" id="filterDate">
+            </div>
+            <div>
+                <label>Unit</label>
+                <select id="filterUnit">
+                    <option value="">Semua Unit</option>
+                </select>
+            </div>
+            <div>
+                <label>Shift</label>
+                <select id="filterShift">
+                    <option value="">Semua Shift</option>
+                    <option value="1">Shift Pagi (07:00–19:00)</option>
+                    <option value="2">Shift Malam (19:00–07:00)</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" style="width:auto;padding:8px 20px;margin-top:18px" onclick="loadAllData()">🔄 Refresh</button>
+        </div>
+
+        <!-- TABS -->
+        <div class="dash-tabs">
+            <button class="dash-tab active" onclick="showTab('closing')" id="tab-closing">💰 Closing Shift</button>
+            <button class="dash-tab" onclick="showTab('hotel')" id="tab-hotel">🏨 Hotel</button>
+            <button class="dash-tab" onclick="showTab('karaoke')" id="tab-karaoke">🎤 Karaoke</button>
+            <button class="dash-tab" onclick="showTab('fnb')" id="tab-fnb">🍽️ F&B</button>
+            <button class="dash-tab" onclick="showTab('audit')" id="tab-audit">🔍 Audit Log</button>
+        </div>
+
+        <!-- CLOSING SHIFT TABLE -->
+        <div class="dash-section" id="panel-closing">
+            <h3>💰 Closing Shift — Rekap Tutup Kasir</h3>
+            <div id="closingTable"><div class="dash-empty">Memuat data...</div></div>
+        </div>
+
+        <!-- HOTEL TABLE -->
+        <div class="dash-section" id="panel-hotel" style="display:none">
+            <h3>🏨 Transaksi Hotel</h3>
+            <div id="hotelTable"><div class="dash-empty">Memuat data...</div></div>
+        </div>
+
+        <!-- KARAOKE TABLE -->
+        <div class="dash-section" id="panel-karaoke" style="display:none">
+            <h3>🎤 Transaksi Karaoke</h3>
+            <div id="karaokeTable"><div class="dash-empty">Memuat data...</div></div>
+        </div>
+
+        <!-- FNB TABLE -->
+        <div class="dash-section" id="panel-fnb" style="display:none">
+            <h3>🍽️ Transaksi F&B</h3>
+            <div id="fnbTable"><div class="dash-empty">Memuat data...</div></div>
+        </div>
+
+        <!-- AUDIT LOG TABLE -->
+        <div class="dash-section" id="panel-audit" style="display:none">
+            <h3>🔍 Audit Log — Siapa Melakukan Apa</h3>
+            <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Audit log mencatat semua transaksi insert beserta PIN (hash) kasir dan perangkat yang digunakan.</p>
+            <div id="auditTable"><div class="dash-empty">Memuat data...</div></div>
+        </div>
+
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ==================== AUTH ====================
+function checkMasterPin() {
+    const overlay = document.createElement('div');
+    overlay.className = 'pin-modal-overlay';
+    overlay.id = 'masterPinOverlay';
+    overlay.innerHTML = `
+        <div class="pin-modal">
+            <div class="pin-modal-icon">👑</div>
+            <h2 class="pin-modal-title">Dashboard Owner</h2>
+            <p class="pin-modal-subtitle">Masukkan Master PIN untuk mengakses laporan</p>
+            <div class="pin-display">
+                <span class="pin-dot" id="mpd0"></span><span class="pin-dot" id="mpd1"></span>
+                <span class="pin-dot" id="mpd2"></span><span class="pin-dot" id="mpd3"></span>
+                <span class="pin-dot" id="mpd4"></span><span class="pin-dot" id="mpd5"></span>
+            </div>
+            <p class="pin-error" id="masterPinError" style="display:none">❌ Master PIN salah.</p>
+            <div class="pin-keypad">
+                ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
+                    <button class="pin-key${k===''?' pin-key-empty':''}" ${k===''?'disabled':''} onclick="masterPinKey('${k}')">${k}</button>
+                `).join('')}
+            </div>
+            <p class="pin-footer">PIN 6 digit — hanya untuk manajemen / owner</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+let _masterBuf = '';
+function masterPinKey(k) {
+    if (k === '⌫') _masterBuf = _masterBuf.slice(0, -1);
+    else if (_masterBuf.length < 6 && k !== '') _masterBuf += k;
+    for (let i = 0; i < 6; i++) {
+        const d = document.getElementById('mpd' + i);
+        if (d) d.classList.toggle('filled', i < _masterBuf.length);
+    }
+    if (_masterBuf.length === 6) masterPinSubmit();
+}
+
+async function masterPinSubmit() {
+    const ok = await AuthUtils.validateMasterPin(_masterBuf);
+    if (ok) {
+        document.getElementById('masterPinOverlay')?.remove();
+        document.getElementById('dashContent').style.display = 'block';
+        initDashboard();
+    } else {
+        const errEl = document.getElementById('masterPinError');
+        if (errEl) errEl.style.display = 'block';
+        for (let i = 0; i < 6; i++) {
+            const d = document.getElementById('mpd' + i);
+            if (d) d.classList.add('error');
+        }
+        _masterBuf = '';
+        setTimeout(() => {
+            if (errEl) errEl.style.display = 'none';
+            for (let i = 0; i < 6; i++) {
+                const d = document.getElementById('mpd' + i);
+                if (d) d.classList.remove('error', 'filled');
+            }
+        }, 1500);
+    }
+}
+
+function logout() {
+    if (confirm('Keluar dari dashboard?')) location.reload();
+}
+
+// ==================== INIT ====================
+function initDashboard() {
+    // Set tanggal hari ini
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('filterDate').value = today;
+    document.getElementById('shiftBadge').textContent = AuthUtils.getShiftLabel();
+    document.getElementById('dateLabel').textContent = new Date().toLocaleDateString('id-ID', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+    // Build filter unit
+    const sel = document.getElementById('filterUnit');
+    [...CONFIG.hotels, ...CONFIG.karaokes, ...CONFIG.wahanas].forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.nama;
+        opt.textContent = u.nama;
+        sel.appendChild(opt);
+    });
+
+    loadAllData();
+}
+
+// ==================== DATA LOADING ====================
+async function loadAllData() {
+    const date = document.getElementById('filterDate').value;
+    const unit = document.getElementById('filterUnit').value;
+    const shift = document.getElementById('filterShift').value;
+
+    await Promise.all([
+        loadClosing(date, unit, shift),
+        loadHotel(date, unit, shift),
+        loadKaraoke(date, unit, shift),
+        loadFnb(date, unit, shift),
+        loadAudit(date),
+    ]);
+    loadStats(date, unit);
+}
+
+function buildFilters(date, unit, shift) {
+    const f = {};
+    if (date) f['created_at'] = `gte.${date}T00:00:00Z`;
+    if (unit) f['unit'] = `eq.${unit}`;
+    if (shift) f['shift_number'] = `eq.${shift}`;
+    return f;
+}
+
+async function loadClosing(date, unit, shift) {
+    const res = await SupabaseClient.query('closing_shift', {
+        select: 'unit,shift_number,closed_at,expected_cash,actual_cash,difference,notes,closed_by_pin',
+        filters: { ...buildFilters(date, unit, shift), 'closed_at': `gte.${date || new Date().toISOString().split('T')[0]}T00:00:00Z` },
+        order: 'closed_at.desc',
+        limit: 100,
+    });
+    const el = document.getElementById('closingTable');
+    if (!res.ok || !res.data.length) { el.innerHTML = '<div class="dash-empty">Belum ada data closing hari ini</div>'; return; }
+
+    let alertCount = 0;
+    el.innerHTML = `<table class="dash-table">
+        <thead><tr>
+            <th>Unit</th><th>Shift</th><th>Waktu Tutup</th>
+            <th>Expected (Rp)</th><th>Actual (Rp)</th><th>Selisih</th><th>Status</th><th>Catatan</th>
+        </tr></thead>
+        <tbody>
+        ${res.data.map(r => {
+            const diff = r.difference || 0;
+            const isOk = diff === 0;
+            if (!isOk) alertCount++;
+            const status = isOk ? '<span class="badge-ok">✅ Pas</span>' :
+                diff > 0 ? `<span class="badge-warn">➕ Lebih</span>` : `<span class="badge-err">➖ Kurang</span>`;
+            const waktu = r.closed_at ? new Date(r.closed_at).toLocaleString('id-ID') : '—';
+            return `<tr>
+                <td><strong>${r.unit}</strong></td>
+                <td>Shift ${r.shift_number}</td>
+                <td>${waktu}</td>
+                <td>Rp ${(r.expected_cash||0).toLocaleString('id-ID')}</td>
+                <td>Rp ${(r.actual_cash||0).toLocaleString('id-ID')}</td>
+                <td style="font-weight:700;color:${diff===0?'var(--available)':diff>0?'#d97706':'var(--occupied)'}">
+                    ${diff >= 0 ? '+' : ''}Rp ${diff.toLocaleString('id-ID')}
+                </td>
+                <td>${status}</td>
+                <td style="color:var(--muted);font-size:12px">${r.notes || '—'}</td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+    document.getElementById('statAlert').textContent = alertCount;
+}
+
+async function loadHotel(date, unit, shift) {
+    const filters = {};
+    if (date) filters['created_at'] = `gte.${date}T00:00:00Z`;
+    if (unit) filters['unit'] = `eq.${unit}`;
+    if (shift) filters['shift_number'] = `eq.${shift}`;
+    const res = await SupabaseClient.query('transaksi_hotel', {
+        select: 'created_at,unit,aksi,nomor_kamar,tipe_kamar,nama_tamu,jumlah_malam,nominal,nominal_fnb,metode_bayar,shift_number',
+        filters, order: 'created_at.desc', limit: 200,
+    });
+    const el = document.getElementById('hotelTable');
+    if (!res.ok || !res.data.length) { el.innerHTML = '<div class="dash-empty">Belum ada data</div>'; return; }
+    el.innerHTML = `<table class="dash-table">
+        <thead><tr><th>Waktu</th><th>Unit</th><th>Aksi</th><th>Kamar</th><th>Tamu</th><th>Malam</th><th>Kamar (Rp)</th><th>F&B (Rp)</th><th>Bayar</th><th>Shift</th></tr></thead>
+        <tbody>
+        ${res.data.map(r => `<tr>
+            <td style="font-size:11px;color:var(--muted)">${r.created_at ? new Date(r.created_at).toLocaleString('id-ID') : '—'}</td>
+            <td>${r.unit}</td>
+            <td><span class="badge-${r.aksi==='CHECK_IN'?'ok':'warn'}">${r.aksi}</span></td>
+            <td>${r.nomor_kamar} <span style="font-size:10px;color:var(--muted)">${r.tipe_kamar||''}</span></td>
+            <td>${r.nama_tamu||'—'}</td>
+            <td style="text-align:center">${r.jumlah_malam||'—'}</td>
+            <td>${r.aksi === 'CHECK_IN' && r.nominal ? 'Rp ' + r.nominal.toLocaleString('id-ID') : '<span style="color:var(--border)">—</span>'}</td>
+            <td style="color:var(--fnb)">${r.aksi === 'CHECK_OUT' && r.nominal_fnb > 0 ? 'Rp ' + r.nominal_fnb.toLocaleString('id-ID') : '<span style="color:var(--border)">—</span>'}</td>
+            <td>${r.metode_bayar||'—'}</td>
+            <td>Shift ${r.shift_number||'—'}</td>
+        </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function loadKaraoke(date, unit, shift) {
+    const filters = {};
+    if (date) filters['created_at'] = `gte.${date}T00:00:00Z`;
+    if (unit) filters['unit'] = `eq.${unit}`;
+    if (shift) filters['shift_number'] = `eq.${shift}`;
+    const res = await SupabaseClient.query('transaksi_karaoke', {
+        select: 'created_at,unit,aksi,ruangan,tipe,nama_tamu,durasi_menit,nominal_sewa,nominal_fnb,total,metode_bayar,free_room_activated,shift_number',
+        filters, order: 'created_at.desc', limit: 200,
+    });
+    const el = document.getElementById('karaokeTable');
+    if (!res.ok || !res.data.length) { el.innerHTML = '<div class="dash-empty">Belum ada data</div>'; return; }
+
+    let freeRoomCount = 0;
+    el.innerHTML = `<table class="dash-table">
+        <thead><tr><th>Waktu</th><th>Unit</th><th>Aksi</th><th>Ruangan</th><th>Tamu</th><th>Durasi</th><th>Sewa (Rp)</th><th>F&B (Rp)</th><th>Total</th><th>Free Room</th><th>Bayar</th></tr></thead>
+        <tbody>
+        ${res.data.map(r => {
+            if (r.free_room_activated) freeRoomCount++;
+            const durasi = r.durasi_menit ? `${Math.floor(r.durasi_menit/60)}j ${r.durasi_menit%60}m` : '—';
+            return `<tr>
+                <td style="font-size:11px;color:var(--muted)">${r.created_at ? new Date(r.created_at).toLocaleString('id-ID') : '—'}</td>
+                <td>${r.unit}</td>
+                <td><span class="badge-${r.aksi==='START'?'ok':'warn'}">${r.aksi}</span></td>
+                <td>${r.ruangan} <span style="font-size:10px;color:var(--muted)">${r.tipe||''}</span></td>
+                <td>${r.nama_tamu||'—'}</td>
+                <td>${durasi}</td>
+                <td>Rp ${(r.nominal_sewa||0).toLocaleString('id-ID')}</td>
+                <td style="color:var(--fnb)">${r.nominal_fnb>0?'Rp '+(r.nominal_fnb||0).toLocaleString('id-ID'):'—'}</td>
+                <td style="font-weight:700">Rp ${(r.total||0).toLocaleString('id-ID')}</td>
+                <td>${r.free_room_activated ? '<span class="badge-ok">🎉 FREE</span>' : '—'}</td>
+                <td>${r.metode_bayar||'—'}</td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+    document.getElementById('statFreeRoom').textContent = freeRoomCount;
+}
+
+async function loadFnb(date, unit, shift) {
+    const filters = {};
+    if (date) filters['created_at'] = `gte.${date}T00:00:00Z`;
+    if (unit) filters['unit'] = `eq.${unit}`;
+    if (shift) filters['shift_number'] = `eq.${shift}`;
+    const res = await SupabaseClient.query('transaksi_fnb', {
+        select: 'created_at,unit,total,metode_bayar,is_walk_in,room_number,guest_name,source_context,shift_number',
+        filters, order: 'created_at.desc', limit: 200,
+    });
+    const el = document.getElementById('fnbTable');
+    if (!res.ok || !res.data.length) { el.innerHTML = '<div class="dash-empty">Belum ada data</div>'; return; }
+    el.innerHTML = `<table class="dash-table">
+        <thead><tr><th>Waktu</th><th>Unit</th><th>Konteks</th><th>Kamar/Ruangan</th><th>Nama Tamu</th><th>Total (Rp)</th><th>Bayar</th><th>Shift</th></tr></thead>
+        <tbody>
+        ${res.data.map(r => `<tr>
+            <td style="font-size:11px;color:var(--muted)">${r.created_at ? new Date(r.created_at).toLocaleString('id-ID') : '—'}</td>
+            <td>${r.unit}</td>
+            <td>${r.is_walk_in ? '<span class="badge-ok">Walk-in</span>' : `<span class="badge-warn">${r.source_context||'linked'}</span>`}</td>
+            <td>${r.room_number||'—'}</td>
+            <td>${r.guest_name||'—'}</td>
+            <td style="font-weight:700">Rp ${(r.total||0).toLocaleString('id-ID')}</td>
+            <td>${r.metode_bayar||'—'}</td>
+            <td>Shift ${r.shift_number||'—'}</td>
+        </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function loadAudit(date) {
+    const filters = {};
+    if (date) filters['changed_at'] = `gte.${date}T00:00:00Z`;
+    const res = await SupabaseClient.query('audit_log', {
+        select: 'changed_at,table_name,action,changed_by_pin',
+        filters, order: 'changed_at.desc', limit: 100,
+    });
+    const el = document.getElementById('auditTable');
+    if (!res.ok || !res.data.length) { el.innerHTML = '<div class="dash-empty">Belum ada data audit (membutuhkan akses service_role)</div>'; return; }
+    el.innerHTML = `<table class="dash-table">
+        <thead><tr><th>Waktu</th><th>Tabel</th><th>Aksi</th><th>PIN Hash (8 char pertama)</th></tr></thead>
+        <tbody>
+        ${res.data.map(r => `<tr>
+            <td style="font-size:11px;color:var(--muted)">${r.changed_at ? new Date(r.changed_at).toLocaleString('id-ID') : '—'}</td>
+            <td>${r.table_name}</td>
+            <td><span class="badge-ok">${r.action}</span></td>
+            <td style="font-family:monospace;font-size:11px;color:var(--muted)">${r.changed_by_pin ? r.changed_by_pin.substring(0,8)+'...' : 'anonymous'}</td>
+        </tr>`).join('')}
+        </tbody>
+    </table>`;
+}
+
+async function loadStats(date, unit) {
+    const tables = [
+        'transaksi_hotel',
+        'transaksi_karaoke',
+        'transaksi_wahana',
+        'transaksi_fnb'
+    ];
+    let totalRevenue = 0, totalCash = 0;
+    for (const name of tables) {
+        const filters = {};
+        if (date) filters['created_at'] = `gte.${date}T00:00:00Z`;
+        if (unit) filters['unit'] = `eq.${unit}`;
+        
+        // Ambil field yang dibutuhkan untuk menghindari double counting
+        const res = await SupabaseClient.query(name, { select: `aksi,nominal,nominal_fnb,total,metode_bayar`, filters });
+        
+        if (res.ok) {
+            res.data.forEach(r => {
+                let val = 0;
+                // LOGIKA PENCEGAH DOUBLE COUNTING
+                if (name === 'transaksi_hotel') {
+                    if (r.aksi === 'CHECK_IN') val = parseInt(r.nominal || 0);
+                    else if (r.aksi === 'CHECK_OUT') val = parseInt(r.nominal_fnb || 0);
+                } else if (name === 'transaksi_karaoke') {
+                    if (r.aksi === 'END') val = parseInt(r.total || 0);
+                } else {
+                    val = parseInt(r.total || 0);
+                }
+
+                totalRevenue += val;
+                if (r.metode_bayar === 'Cash') totalCash += val;
+            });
+        }
+    }
+    document.getElementById('statRevenue').textContent = 'Rp ' + totalRevenue.toLocaleString('id-ID');
+    document.getElementById('statCash').textContent = 'Rp ' + totalCash.toLocaleString('id-ID');
+}
+
+// ==================== TABS ====================
+function showTab(tab) {
+    ['closing','hotel','karaoke','fnb','audit'].forEach(t => {
+        document.getElementById('panel-' + t).style.display = t === tab ? 'block' : 'none';
+        document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+    });
+}
+
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+// Mulai dengan PIN modal
+checkMasterPin();
+</script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kasir Karaoke — Pancoran Group</title>
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Kasir Karaoke">
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+    <script src="config.js"></script>
+    <script src="auth-utils.js"></script>
+    <script src="supabase.js"></script>
+    <script src="sync.js"></script>
+    <script src="karaoke-logic.js"></script>
+    <script src="closing-utils.js"></script>
+    <style>
+        :root { --accent: var(--karaoke); --accent-rgb: 124,58,237; }
+        .unit-tab.active  { background: var(--karaoke); border-color: var(--karaoke); color: #fff; }
+        .btn-primary      { background: var(--karaoke); }
+        .occ-bar-fill     { background: var(--karaoke); }
+        .total-box        { border-color: var(--karaoke); }
+        .total-box .val   { color: var(--karaoke); }
+        .room-card.vip-available .room-num { color: var(--vip); }
+        .timer-display { font-size: 26px; font-weight: 800; text-align: center; color: var(--karaoke); margin: 8px 0; }
+        .session-info  { background: rgba(124,58,237,0.05); border: 1px solid var(--karaoke); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; font-size: 14px; }
+        .session-info .lbl { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+        .session-info .val { font-weight: 700; }
+        .harga-note { font-size: 12px; color: var(--muted); text-align: center; margin-top: 6px; }
+        .karaoke-total-summary { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; }
+        .karaoke-total-summary .row { display: flex; justify-content: space-between; padding: 4px 0; }
+        .karaoke-total-summary .row.grand { font-weight: 800; font-size: 16px; border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+    </style>
+</head>
+<body>
+<nav class="navbar">
+    <button class="navbar-back" onclick="window.location.href='index.html'">← Kembali</button>
+    <span class="navbar-dot dot-karaoke"></span>
+    <span class="navbar-title" id="navTitle">Kasir Karaoke</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <span id="syncDot" style="width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block;transition:background 0.3s"></span>
+        <button id="syncBtn" class="navbar-back" onclick="SyncQueue.manualSync()">✓ Tersinkron</button>
+        <span id="syncBadge" style="display:none;background:#d97706;color:#fff;font-size:11px;font-weight:800;width:20px;height:20px;border-radius:50%;align-items:center;justify-content:center;">0</span>
+        <button class="navbar-back" onclick="ClosingUtils.showModal(currentUnitName)" title="Tutup Kasir">🔒</button>
+        <button class="navbar-back" onclick="AuthUtils.showRebindModal('karaoke')" title="Ganti perangkat (Master PIN)">⚙️</button>
+    </div>
+</nav>
+
+<div class="page">
+    <div id="unitInfo" style="font-size:13px;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+        <span style="background:rgba(124,58,237,0.12);color:var(--karaoke);padding:4px 10px;border-radius:99px;font-weight:700;font-size:12px" id="unitBadge"></span>
+        <span id="shiftInfo"></span>
+    </div>
+    <div class="occupancy-bar">
+        <div class="occ-stat"><div class="num" id="occFree" style="color:var(--available)">–</div><div class="lbl">Tersedia</div></div>
+        <div class="occ-bar-track"><div class="occ-bar-fill" id="occBar" style="width:0%"></div></div>
+        <div class="occ-stat"><div class="num" id="occUsed" style="color:var(--occupied)">–</div><div class="lbl">Terpakai</div></div>
+    </div>
+    <div class="legend">
+        <div class="legend-item"><div class="legend-dot available"></div> Tersedia</div>
+        <div class="legend-item"><div class="legend-dot occupied"></div> Sedang Dipakai</div>
+        <div class="legend-item"><div class="legend-dot vip"></div> VIP Tersedia</div>
+    </div>
+    <div class="floor-label">Daftar Ruangan</div>
+    <div class="room-grid" id="roomGrid"></div>
+</div>
+
+<!-- MODAL MULAI SESI -->
+<div class="modal-overlay" id="modalStart">
+    <div class="modal">
+        <div class="modal-header">
+            <div><div class="modal-title" id="stTitle">Ruang V01</div><div class="modal-subtitle" id="stSubtitle">VIP — Rp 150.000/jam</div></div>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="form-group"><label>Nama / Nomor Tamu</label><input type="text" id="stNama" placeholder="Contoh: Keluarga Budi / Meja 3"></div>
+        <div class="form-group"><label>Estimasi Durasi (jam)</label><input type="number" id="stDurasi" value="2" min="1" onchange="hitungEstimasi()"></div>
+        <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:13px;color:var(--muted);">
+            Estimasi: <strong id="stEstimasi" style="color:var(--text)">Rp 0</strong>
+            <div class="harga-note">(Tagihan final dihitung saat sesi selesai)</div>
+        </div>
+        <div class="btn-row">
+            <button class="btn btn-secondary" onclick="closeModal()">Batal</button>
+            <button class="btn btn-primary" onclick="doStart()">▶ Mulai Sesi</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL AKHIRI SESI (dengan F&B + Free Room) -->
+<div class="modal-overlay" id="modalEnd">
+    <div class="modal" style="max-width:480px">
+        <div class="modal-header">
+            <div><div class="modal-title" id="endTitle">Akhiri Sesi</div><div class="modal-subtitle" id="endSubtitle">VIP</div></div>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+
+        <!-- Info Sesi -->
+        <div class="session-info">
+            <div class="lbl">Nama Tamu</div><div class="val" id="endNama">—</div><br>
+            <div class="lbl">Mulai Sesi</div><div class="val" id="endMulai">—</div><br>
+            <div class="lbl">Durasi</div><div class="timer-display" id="endDurasi">00:00</div>
+        </div>
+
+        <!-- Free Room Badge -->
+        <div class="free-room-badge" id="freeRoomBadge">🎉 FREE ROOM AKTIF — Belanja F&B ≥ Rp 200.000!</div>
+
+        <!-- F&B Mini Menu -->
+        <div class="fnb-section">
+            <div class="fnb-section-title">Tambah Pesanan F&B</div>
+            <div class="category-tabs" id="fnbCatTabs" style="margin-bottom:8px"></div>
+            <div class="fnb-mini-grid" id="fnbMiniGrid"></div>
+            <div class="fnb-mini-cart" id="fnbCartSummary">Belum ada pesanan F&B</div>
+        </div>
+
+        <!-- Total Summary -->
+        <div class="karaoke-total-summary">
+            <div class="row"><span style="color:var(--muted)">Sewa Ruangan</span><span id="karaokeSewaDisplay">Rp 0</span></div>
+            <div class="row"><span style="color:var(--muted)">Total F&B</span><span id="karaokeFnbTotal">Rp 0</span></div>
+            <div class="row grand"><span>Grand Total</span><span id="karaokeGrandTotal" style="color:var(--karaoke)">Rp 0</span></div>
+        </div>
+
+        <div class="form-group"><label>Metode Pembayaran</label><div class="bayar-grid" id="bayarGrid"></div></div>
+        <div class="btn-row">
+            <button class="btn btn-secondary" onclick="closeModal()">Batal</button>
+            <button class="btn btn-danger" onclick="doEnd()">■ Akhiri & Bayar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CLOSING SHIFT -->
+<div class="modal-overlay" id="modalClosing">
+    <div class="closing-modal">
+        <h3>🔒 Tutup Kasir</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px" id="closingUnitName">—</p>
+        <div class="closing-stat-row"><span class="lbl">Shift</span><span class="val" id="closingShiftLabel">—</span></div>
+        <div class="closing-stat-row"><span class="lbl">Total Cash Sistem</span><span class="val" id="expectedCashDisplay">Rp 0</span></div>
+        <div class="form-group" style="margin-top:14px">
+            <label>Hitung Fisik (Rp)</label>
+            <input type="number" id="actualCashInput" placeholder="Jumlah uang fisik" oninput="ClosingUtils.previewDiff()">
+        </div>
+        <div class="diff-preview" id="diffPreview"></div>
+        <div class="form-group">
+            <label>Catatan (opsional)</label>
+            <textarea id="closingNotes" rows="2" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:'Outfit',sans-serif;font-size:14px;resize:none;" placeholder="Catatan selisih..."></textarea>
+        </div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('modalClosing').classList.remove('show')">Batal</button>
+            <button class="btn-closing" style="flex:1;margin:0" onclick="handleClosingSubmit()">✓ Konfirmasi Tutup</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let activeUnit = 0, activeRuangan = null, selectedBayar = 'Cash', currentUnitName = '';
+let activeFnbCategory = 'Semua';
+
+function init() {
+    const bg = document.getElementById('bayarGrid');
+    CONFIG.metode_bayar.forEach(m => {
+        const b = document.createElement('button');
+        b.className = 'bayar-btn' + (m === 'Cash' ? ' selected' : '');
+        b.textContent = m;
+        b.onclick = () => { selectedBayar = m; bg.querySelectorAll('.bayar-btn').forEach(x => x.classList.toggle('selected', x.textContent === m)); };
+        bg.appendChild(b);
+    });
+
+    // Device-bound init: perangkat dikunci ke 1 unit karaoke oleh owner
+    AuthUtils.initPage('karaoke', (unitId, unitName) => {
+        const karaokeIdx = CONFIG.karaokes.findIndex(k => k.id === unitId);
+        activeUnit = karaokeIdx >= 0 ? karaokeIdx : 0;
+        currentUnitName = unitName;
+        const karaoke = CONFIG.karaokes[activeUnit];
+        document.getElementById('navTitle').textContent = 'Kasir — ' + (karaoke?.shortName || unitName);
+        document.getElementById('unitBadge').textContent = '🎤 ' + unitName;
+        document.getElementById('shiftInfo').textContent = AuthUtils.getShiftLabel();
+        renderUnit(activeUnit);
+        buildFnbMenu();
+    });
+}
+
+function getStatus(id) {
+    const raw = localStorage.getItem('karaoke_' + id);
+    return raw ? JSON.parse(raw) : { status: 'available' };
+}
+
+function renderUnit(i) {
+    const unit = CONFIG.karaokes[i];
+    const grid = document.getElementById('roomGrid');
+    grid.innerHTML = '';
+    let terisi = 0;
+    unit.ruangan.forEach(r => {
+        const st = getStatus(r.id);
+        const isOcc = st.status === 'occupied';
+        const isVip = r.tipe === 'VIP';
+        if (isOcc) terisi++;
+        let cls = 'room-card ';
+        if (isOcc) cls += 'occupied'; else if (isVip) cls += 'vip-available'; else cls += 'available';
+        const card = document.createElement('div');
+        card.className = cls;
+        card.innerHTML = `
+            ${isVip ? '<span class="badge-vip">VIP</span>' : ''}
+            <div class="room-num">${r.nomor}</div>
+            <div class="room-type">Rp ${(r.harga_per_jam/1000).toFixed(0)}k/jam</div>
+            ${isOcc ? `<div class="room-guest">${st.nama_tamu || '—'}</div>` : ''}
+        `;
+        card.onclick = () => openRoom(r, st);
+        grid.appendChild(card);
+    });
+    const total = unit.ruangan.length;
+    document.getElementById('occUsed').textContent = terisi;
+    document.getElementById('occFree').textContent = total - terisi;
+    document.getElementById('occBar').style.width = (terisi / total * 100) + '%';
+}
+
+function buildFnbMenu() {
+    const menu = CONFIG.menu_fnb;
+    const categories = ['Semua', ...new Set(menu.map(m => m.kategori))];
+
+    const catTabs = document.getElementById('fnbCatTabs');
+    catTabs.innerHTML = '';
+    categories.forEach(cat => {
+        const btn = document.createElement('button');
+        btn.className = 'cat-tab' + (cat === activeFnbCategory ? ' active' : '');
+        btn.textContent = cat;
+        btn.onclick = () => { activeFnbCategory = cat; buildFnbMenu(); };
+        catTabs.appendChild(btn);
+    });
+
+    const display = activeFnbCategory === 'Semua' ? menu : menu.filter(m => m.kategori === activeFnbCategory);
+    const grid = document.getElementById('fnbMiniGrid');
+    grid.innerHTML = '';
+    display.forEach(item => {
+        const el = document.createElement('div');
+        el.className = 'fnb-mini-item';
+        el.innerHTML = `<div class="mn">${item.nama}</div><div class="mp">Rp ${(item.harga/1000).toFixed(0)}k</div>`;
+        el.onclick = () => { KaraokeLogic.addFnbItem(item, 1); updateFnbCartDisplay(); };
+        grid.appendChild(el);
+    });
+}
+
+function updateFnbCartDisplay() {
+    const items = KaraokeLogic.session.fnbItems;
+    const el = document.getElementById('fnbCartSummary');
+    if (!items.length) {
+        el.textContent = 'Belum ada pesanan F&B';
+        return;
+    }
+    el.textContent = items.map(i => `${i.nama} ×${i.qty}`).join(' · ') +
+        ` | Total: Rp ${KaraokeLogic.session.fnbCumulative.toLocaleString('id-ID')}`;
+}
+
+function openRoom(ruangan, st) {
+    activeRuangan = ruangan;
+    if (st.status === 'available') {
+        document.getElementById('stTitle').textContent = 'Ruang ' + ruangan.nomor;
+        document.getElementById('stSubtitle').textContent = ruangan.tipe + ' — Rp ' + ruangan.harga_per_jam.toLocaleString('id-ID') + '/jam';
+        document.getElementById('stNama').value = '';
+        document.getElementById('stDurasi').value = 2;
+        hitungEstimasi();
+        document.getElementById('modalStart').classList.add('show');
+    } else {
+        const start = new Date(st.jam_mulai_iso);
+        const now = new Date();
+        const diffMin = Math.floor((now - start) / 60000);
+        const jam = Math.floor(diffMin / 60);
+        const menit = diffMin % 60;
+
+        KaraokeLogic.startSession(ruangan.id, ruangan.harga_per_jam);
+        KaraokeLogic.setDurasi(diffMin);
+
+        document.getElementById('endTitle').textContent = 'Akhiri Sesi — ' + ruangan.nomor;
+        document.getElementById('endSubtitle').textContent = ruangan.tipe;
+        document.getElementById('endNama').textContent = st.nama_tamu || '—';
+        document.getElementById('endMulai').textContent = st.jam_mulai || '—';
+        document.getElementById('endDurasi').textContent = `${String(jam).padStart(2,'0')}:${String(menit).padStart(2,'0')}`;
+
+        // Reset F&B session untuk ruangan ini
+        KaraokeLogic.reset();
+        KaraokeLogic.startSession(ruangan.id, ruangan.harga_per_jam);
+        KaraokeLogic.setDurasi(diffMin);
+        updateFnbCartDisplay();
+        buildFnbMenu();
+
+        document.getElementById('modalEnd').classList.add('show');
+    }
+}
+
+function hitungEstimasi() {
+    if (!activeRuangan) return;
+    const dur = parseInt(document.getElementById('stDurasi').value) || 1;
+    document.getElementById('stEstimasi').textContent = 'Rp ' + (activeRuangan.harga_per_jam * dur).toLocaleString('id-ID');
+}
+
+function closeModal() {
+    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('show'));
+}
+
+async function doStart() {
+    const nama = document.getElementById('stNama').value.trim() || 'Tamu';
+    const now = new Date();
+    localStorage.setItem('karaoke_' + activeRuangan.id, JSON.stringify({
+        status: 'occupied', nama_tamu: nama,
+        jam_mulai: now.toLocaleString('id-ID'), jam_mulai_iso: now.toISOString()
+    }));
+    closeModal();
+    renderUnit(activeUnit);
+    SyncQueue.push(CONFIG.tables.karaoke, {
+        timestamp: now.toISOString(), unit: currentUnitName,
+        aksi: 'START', ruangan: activeRuangan.nomor, tipe: activeRuangan.tipe, nama_tamu: nama,
+        ...AuthUtils.getAuthPayload(),
+    });
+    showToast('▶ Sesi Ruang ' + activeRuangan.nomor + ' dimulai!', 'success');
+}
+
+async function doEnd() {
+    const st = getStatus(activeRuangan.id);
+    const now = new Date();
+    const start = new Date(st.jam_mulai_iso);
+    const diffMin = Math.floor((now - start) / 60000);
+
+    KaraokeLogic.setDurasi(diffMin);
+    const roomFee = KaraokeLogic.getRoomFee();
+    const fnbTotal = KaraokeLogic.session.fnbCumulative;
+    const grandTotal = KaraokeLogic.getGrandTotal();
+
+    localStorage.removeItem('karaoke_' + activeRuangan.id);
+    closeModal();
+    renderUnit(activeUnit);
+
+    SyncQueue.push(CONFIG.tables.karaoke, {
+        timestamp: now.toISOString(), unit: currentUnitName,
+        aksi: 'END', ruangan: activeRuangan.nomor, tipe: activeRuangan.tipe,
+        nama_tamu: st.nama_tamu, jam_mulai: st.jam_mulai, durasi_menit: diffMin,
+        nominal_sewa: roomFee, nominal_fnb: fnbTotal, total: grandTotal,
+        metode_bayar: selectedBayar,
+        fnb_cumulative: KaraokeLogic.session.fnbCumulative,
+        free_room_activated: KaraokeLogic.session.freeRoomActivated,
+        ...AuthUtils.getAuthPayload(),
+    });
+
+    KaraokeLogic.reset();
+    showToast('■ Sesi Ruang ' + activeRuangan.nomor + ' selesai! Total: Rp ' + grandTotal.toLocaleString('id-ID'), 'success');
+}
+
+async function handleClosingSubmit() {
+    const pin = prompt('Masukkan PIN Kasir untuk konfirmasi:');
+    if (!pin) return;
+    const actual = parseInt(document.getElementById('actualCashInput').value) || 0;
+    const notes = document.getElementById('closingNotes').value;
+    const res = await ClosingUtils.submit(currentUnitName, pin, actual, notes);
+    if (res.ok) {
+        alert('✅ Tutup kasir berhasil!');
+        document.getElementById('modalClosing').classList.remove('show');
+    } else {
+        alert('❌ Gagal: ' + (res.error || 'Unknown'));
+    }
+}
+
+function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast ' + type + ' show';
+    setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// Load expected cash saat modal closing dibuka
+document.getElementById('modalClosing').addEventListener('transitionstart', async () => {
+    document.getElementById('closingShiftLabel').textContent = AuthUtils.getShiftLabel();
+    const expected = await ClosingUtils.calculateExpectedCash(currentUnitName, AuthUtils.getAutoShift());
+    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + expected.toLocaleString('id-ID');
+});
+
+init();
+</script>
+</body>
+</html>
