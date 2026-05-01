@@ -133,10 +133,20 @@
         <h3>🔒 Tutup Kasir</h3>
         <p style="font-size:13px;color:var(--muted);margin-bottom:16px" id="closingUnitName">—</p>
         <div class="closing-stat-row"><span class="lbl">Shift</span><span class="val" id="closingShiftLabel">—</span></div>
-        <div class="closing-stat-row"><span class="lbl">Total Cash Sistem</span><span class="val" id="expectedCashDisplay">Rp 0</span></div>
-        <div class="form-group" style="margin-top:14px">
-            <label>Hitung Fisik (Rp)</label>
-            <input type="number" id="actualCashInput" placeholder="Jumlah uang fisik" oninput="ClosingUtils.previewDiff()">
+        <div class="closing-stat-row">
+            <span class="lbl">💵 Uang Tunai (Cash) Sistem</span>
+            <span class="val" id="expectedCashDisplay" style="color:var(--available);font-size:18px">Rp 0</span>
+        </div>
+        <div class="closing-stat-row" style="font-size:12px;color:var(--muted);border:none;padding-top:0">
+            <span>💳 Transfer Sistem</span><span id="expectedTransferDisplay">Rp 0</span>
+        </div>
+        <div class="closing-stat-row" style="font-size:12px;color:var(--muted);border:none;padding-top:0;margin-bottom:8px">
+            <span>📲 QRIS Sistem</span><span id="expectedQrisDisplay">Rp 0</span>
+        </div>
+        <div class="form-group" style="background:rgba(22,163,74,0.05);border:1px solid rgba(22,163,74,0.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+            <label style="color:var(--available);font-weight:700">💰 Hitung Fisik Uang di Laci (Rp)</label>
+            <input type="number" id="actualCashInput" placeholder="Jumlah uang kertas &amp; koin" oninput="ClosingUtils.previewDiff()" style="margin-top:8px">
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">⚠️ Hanya hitung uang fisik (kertas &amp; koin). Transfer &amp; QRIS tidak perlu dihitung.</div>
         </div>
         <div class="diff-preview" id="diffPreview"></div>
         <div class="form-group">
@@ -351,8 +361,9 @@ async function handleClosingSubmit() {
     const notes = document.getElementById('closingNotes').value;
     const res = await ClosingUtils.submit(currentUnitName, pin, actual, notes);
     if (res.ok) {
-        alert('✅ Tutup kasir berhasil!');
-        document.getElementById('modalClosing').classList.remove('show');
+        alert('✅ Tutup kasir berhasil! Sesi akan ditutup sekarang.');
+        AuthUtils.clearSession();
+        location.reload();
     } else {
         alert('❌ Gagal: ' + (res.error || 'Unknown'));
     }
@@ -365,11 +376,13 @@ function showToast(msg, type) {
     setTimeout(() => t.classList.remove('show'), 3500);
 }
 
-// Load expected cash saat modal closing dibuka
+// Load expected cash breakdown saat modal closing dibuka
 document.getElementById('modalClosing').addEventListener('transitionstart', async () => {
     document.getElementById('closingShiftLabel').textContent = AuthUtils.getShiftLabel();
-    const expected = await ClosingUtils.calculateExpectedCash(currentUnitName, AuthUtils.getAutoShift());
-    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + expected.toLocaleString('id-ID');
+    const { cash, transfer, qris } = await ClosingUtils.calculateBreakdown(currentUnitName, AuthUtils.getAutoShift());
+    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + cash.toLocaleString('id-ID');
+    document.getElementById('expectedTransferDisplay').textContent = 'Rp ' + transfer.toLocaleString('id-ID');
+    document.getElementById('expectedQrisDisplay').textContent = 'Rp ' + qris.toLocaleString('id-ID');
 });
 
 init();

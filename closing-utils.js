@@ -35,8 +35,14 @@ const ClosingUtils = {
         return false;
     },
 
-    // Hitung total expected cash dari semua tabel transaksi hari ini
+    // Hitung total expected cash dari semua tabel transaksi hari ini (CASH ONLY)
     async calculateExpectedCash(unitName, shift) {
+        const { cash } = await this.calculateBreakdown(unitName, shift);
+        return cash;
+    },
+
+    // Hitung breakdown per metode bayar: { cash, transfer, qris }
+    async calculateBreakdown(unitName, shift) {
         const tables = [
             { tbl: CONFIG.tables.hotel },
             { tbl: CONFIG.tables.karaoke },
@@ -45,17 +51,15 @@ const ClosingUtils = {
         ];
 
         const today = new Date().toISOString().split('T')[0];
-        let total = 0;
+        let cash = 0, transfer = 0, qris = 0;
         const unitEncoded = encodeURIComponent(unitName);
 
         for (const { tbl } of tables) {
             try {
-                // Ambil semua field yang mungkin dipakai untuk kalkulasi spesifik
                 const url = `${CONFIG.supabase.url}/rest/v1/${tbl}` +
                     `?select=aksi,nominal,nominal_fnb,total,metode_bayar` +
                     `&unit=eq.${unitEncoded}` +
                     `&shift_number=eq.${shift}` +
-                    `&metode_bayar=eq.Cash` +
                     `&created_at=gte.${today}T00:00:00Z`;
 
                 const res = await fetch(url, {
@@ -69,20 +73,25 @@ const ClosingUtils = {
                 if (res.ok) {
                     const rows = await res.json();
                     rows.forEach(r => {
-                        // LOGIKA PENCEGAH DOUBLE COUNTING
+                        let val = 0;
+                        // Hotel: hanya akui pendapatan saat CHECK_OUT
                         if (tbl === CONFIG.tables.hotel) {
-                            if (r.aksi === 'CHECK_IN') total += parseInt(r.nominal || 0);
-                            if (r.aksi === 'CHECK_OUT') total += parseInt(r.nominal_fnb || 0);
+                            if (r.aksi === 'CHECK_OUT') val = parseInt(r.nominal || 0) + parseInt(r.nominal_fnb || 0);
                         } else if (tbl === CONFIG.tables.karaoke) {
-                            if (r.aksi === 'END') total += parseInt(r.total || 0);
+                            if (r.aksi === 'END') val = parseInt(r.total || 0);
                         } else {
-                            total += parseInt(r.total || 0);
+                            val = parseInt(r.total || 0);
                         }
+
+                        const m = (r.metode_bayar || '').toLowerCase();
+                        if (m === 'cash') cash += val;
+                        else if (m === 'transfer') transfer += val;
+                        else if (m === 'qris') qris += val;
                     });
                 }
-            } catch { /* offline — abaikan */ }
+            } catch { /* offline */ }
         }
-        return total;
+        return { cash, transfer, qris };
     },
 
     // Submit closing shift ke Supabase

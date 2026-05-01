@@ -87,9 +87,9 @@ const AuthUtils = {
     showDeviceSetupModal(allowedType, onBound) {
         // Kumpulkan unit sesuai tipe halaman
         const allUnits = [
-            ...CONFIG.hotels.map(h  => ({ id: h.id,  nama: h.nama,  type: 'hotel'   })),
-            ...CONFIG.karaokes.map(k => ({ id: k.id,  nama: k.nama,  type: 'karaoke' })),
-            ...CONFIG.wahanas.map(w  => ({ id: w.id,  nama: w.nama,  type: 'wahana'  })),
+            ...CONFIG.hotels.map(h => ({ id: h.id, nama: h.nama, type: 'hotel' })),
+            ...CONFIG.karaokes.map(k => ({ id: k.id, nama: k.nama, type: 'karaoke' })),
+            ...CONFIG.wahanas.map(w => ({ id: w.id, nama: w.nama, type: 'wahana' })),
         ];
         const units = allowedType ? allUnits.filter(u => u.type === allowedType) : allUnits;
 
@@ -114,8 +114,8 @@ const AuthUtils = {
                     </div>
                     <p class="pin-error" id="setupPinError" style="display:none">❌ Master PIN salah.</p>
                     <div class="pin-keypad">
-                        ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
-                            <button class="pin-key${k===''?' pin-key-empty':''}" ${k===''?'disabled':''}
+                        ${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map(k => `
+                            <button class="pin-key${k === '' ? ' pin-key-empty' : ''}" ${k === '' ? 'disabled' : ''}
                                 onclick="AuthUtils._setupKeyPress('${k}')">${k}</button>
                         `).join('')}
                     </div>
@@ -216,10 +216,10 @@ const AuthUtils = {
 
     getSession() {
         return {
-            unitId:  sessionStorage.getItem('kasir_unit'),
+            unitId: sessionStorage.getItem('kasir_unit'),
             pinHash: sessionStorage.getItem('kasir_pin_hash'),
-            shift:   parseInt(sessionStorage.getItem('kasir_shift') || '1'),
-            device:  sessionStorage.getItem('kasir_device'),
+            shift: parseInt(sessionStorage.getItem('kasir_shift') || '1'),
+            device: sessionStorage.getItem('kasir_device'),
             loginAt: sessionStorage.getItem('kasir_login_at'),
         };
     },
@@ -229,16 +229,16 @@ const AuthUtils = {
     },
 
     clearSession() {
-        ['kasir_unit','kasir_pin_hash','kasir_shift','kasir_device','kasir_login_at']
+        ['kasir_unit', 'kasir_pin_hash', 'kasir_shift', 'kasir_device', 'kasir_login_at']
             .forEach(k => sessionStorage.removeItem(k));
     },
 
     getAuthPayload() {
         const s = this.getSession();
         return {
-            staff_pin_hash:     s.pinHash || null,
-            device_fingerprint: s.device  || this.getDeviceFingerprint(),
-            shift_number:       s.shift   || this.getAutoShift(),
+            staff_pin_hash: s.pinHash || null,
+            device_fingerprint: s.device || this.getDeviceFingerprint(),
+            shift_number: s.shift || this.getAutoShift(),
         };
     },
 
@@ -253,7 +253,7 @@ const AuthUtils = {
      * @param {Function} onReady(unitId, unitName) - callback setelah semua valid
      */
     initPage(allowedType, onReady) {
-        const boundUnitId   = this.getDeviceUnit();
+        const boundUnitId = this.getDeviceUnit();
         const boundUnitType = this.getDeviceType();
 
         // Belum pernah di-setup → tampilkan setup modal
@@ -273,9 +273,9 @@ const AuthUtils = {
 
         // Cari nama unit dari CONFIG
         const allUnits = [
-            ...CONFIG.hotels.map(h  => ({ id: h.id,  nama: h.nama  })),
-            ...CONFIG.karaokes.map(k => ({ id: k.id,  nama: k.nama  })),
-            ...CONFIG.wahanas.map(w  => ({ id: w.id,  nama: w.nama  })),
+            ...CONFIG.hotels.map(h => ({ id: h.id, nama: h.nama })),
+            ...CONFIG.karaokes.map(k => ({ id: k.id, nama: k.nama })),
+            ...CONFIG.wahanas.map(w => ({ id: w.id, nama: w.nama })),
         ];
         const unit = allUnits.find(u => u.id === boundUnitId);
         const unitName = unit ? unit.nama : boundUnitId;
@@ -307,8 +307,8 @@ const AuthUtils = {
                 </div>
                 <p class="pin-error" id="pinError" style="display:none">❌ PIN salah. Coba lagi.</p>
                 <div class="pin-keypad">
-                    ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
-                        <button class="pin-key${k===''?' pin-key-empty':''}" ${k===''?'disabled':''}
+                    ${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map(k => `
+                        <button class="pin-key${k === '' ? ' pin-key-empty' : ''}" ${k === '' ? 'disabled' : ''}
                             onclick="AuthUtils._keyPress('${k}')">${k}</button>
                     `).join('')}
                 </div>
@@ -317,10 +317,10 @@ const AuthUtils = {
         `;
         document.body.appendChild(overlay);
 
-        this._pinBuffer   = '';
-        this._pinUnitId   = unitId;
+        this._pinBuffer = '';
+        this._pinUnitId = unitId;
         this._pinOnSuccess = (uid, hash) => onReady(uid, unitName, hash);
-        this._pinOverlay  = overlay;
+        this._pinOverlay = overlay;
     },
 
     _showWrongPageWarning(boundType, boundUnitId) {
@@ -407,8 +407,8 @@ const AuthUtils = {
                 </div>
                 <p class="pin-error" id="rebindError" style="display:none">❌ Master PIN salah.</p>
                 <div class="pin-keypad">
-                    ${[1,2,3,4,5,6,7,8,9,'',0,'⌫'].map(k => `
-                        <button class="pin-key${k===''?' pin-key-empty':''}" ${k===''?'disabled':''}
+                    ${[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, '⌫'].map(k => `
+                        <button class="pin-key${k === '' ? ' pin-key-empty' : ''}" ${k === '' ? 'disabled' : ''}
                             onclick="AuthUtils._rebindKey('${k}')">${k}</button>
                     `).join('')}
                 </div>

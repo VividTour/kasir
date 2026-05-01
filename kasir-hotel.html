@@ -87,11 +87,7 @@
             <label>Jumlah Malam</label>
             <input type="number" id="inputMalam" value="1" min="1" onchange="hitungTotal()">
         </div>
-        <div class="info-box">Total: <strong id="labelTotal">Rp 0</strong></div>
-        <div class="form-group">
-            <label>Metode Pembayaran</label>
-            <div class="bayar-grid" id="bayarGrid"></div>
-        </div>
+        <div class="info-box">Estimasi Total: <strong id="labelTotal">Rp 0</strong><br><span style="font-size:11px;color:var(--muted)">Pembayaran akan dikonfirmasi saat Check Out</span></div>
         <div class="btn-row">
             <button class="btn btn-secondary" onclick="closeModal()">Batal</button>
             <button class="btn btn-primary" id="btnCheckin" onclick="doCheckin()">✓ Check In</button>
@@ -149,12 +145,21 @@
             <span class="val" id="closingShiftLabel">—</span>
         </div>
         <div class="closing-stat-row">
-            <span class="lbl">Total Cash Sistem</span>
-            <span class="val" id="expectedCashDisplay">Rp 0</span>
+            <span class="lbl">💵 Uang Tunai (Cash) Sistem</span>
+            <span class="val" id="expectedCashDisplay" style="color:var(--available);font-size:18px">Rp 0</span>
         </div>
-        <div class="form-group" style="margin-top:14px">
-            <label>Hitung Fisik (Rp)</label>
-            <input type="number" id="actualCashInput" placeholder="Masukkan jumlah uang fisik" oninput="ClosingUtils.previewDiff()">
+        <div class="closing-stat-row" style="font-size:12px;color:var(--muted);border:none;padding-top:0">
+            <span>💳 Transfer Sistem</span>
+            <span id="expectedTransferDisplay">Rp 0</span>
+        </div>
+        <div class="closing-stat-row" style="font-size:12px;color:var(--muted);border:none;padding-top:0;margin-bottom:8px">
+            <span>📲 QRIS Sistem</span>
+            <span id="expectedQrisDisplay">Rp 0</span>
+        </div>
+        <div class="form-group" style="background:rgba(22,163,74,0.05);border:1px solid rgba(22,163,74,0.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+            <label style="color:var(--available);font-weight:700">💰 Hitung Fisik Uang di Laci (Rp)</label>
+            <input type="number" id="actualCashInput" placeholder="Jumlah uang kertas & koin" oninput="ClosingUtils.previewDiff()" style="margin-top:8px">
+            <div style="font-size:11px;color:var(--muted);margin-top:6px">⚠️ Hanya hitung uang fisik (kertas & koin). Transfer & QRIS tidak perlu dihitung.</div>
         </div>
         <div class="diff-preview" id="diffPreview"></div>
         <div class="form-group">
@@ -178,21 +183,17 @@ let selectedCoBayar = 'Cash';
 let currentUnitName = '';
 
 function init() {
-    // Inisialisasi tombol bayar
-    const bg = document.getElementById('bayarGrid');
+    // Inisialisasi tombol bayar hanya untuk checkout
     const coBg = document.getElementById('coBayarGrid');
     CONFIG.metode_bayar.forEach(m => {
-        [bg, coBg].forEach(grid => {
-            const b = document.createElement('button');
-            b.className = 'bayar-btn' + (m === 'Cash' ? ' selected' : '');
-            b.textContent = m;
-            b.onclick = () => {
-                if (grid.id === 'bayarGrid') selectedBayar = m;
-                else selectedCoBayar = m;
-                grid.querySelectorAll('.bayar-btn').forEach(x => x.classList.toggle('selected', x.textContent === m));
-            };
-            grid.appendChild(b);
-        });
+        const b = document.createElement('button');
+        b.className = 'bayar-btn' + (m === 'Cash' ? ' selected' : '');
+        b.textContent = m;
+        b.onclick = () => {
+            selectedCoBayar = m;
+            coBg.querySelectorAll('.bayar-btn').forEach(x => x.classList.toggle('selected', x.textContent === m));
+        };
+        coBg.appendChild(b);
     });
 
     // Device-bound init: perangkat dikunci ke 1 unit hotel oleh owner
@@ -291,15 +292,17 @@ async function doCheckin() {
     const nominal = activeKamar.harga * malam;
     const now = new Date();
 
-    const data = { status: 'occupied', nama_tamu: nama, jam_checkin: now.toLocaleString('id-ID'), jumlah_malam: malam, nominal, metode_bayar: selectedBayar };
+    // Simpan data check-in tanpa metode bayar (akan ditentukan saat checkout)
+    const data = { status: 'occupied', nama_tamu: nama, jam_checkin: now.toLocaleString('id-ID'), jumlah_malam: malam, nominal };
     localStorage.setItem('hotel_' + activeKamar.id, JSON.stringify(data));
     closeModal();
     renderUnit(activeUnit);
 
+    // Catat CHECK_IN ke Supabase (aksi administratif, nominal=0 karena belum bayar)
     const payload = {
         timestamp: now.toISOString(), unit: currentUnitName,
         aksi: 'CHECK_IN', nomor_kamar: activeKamar.nomor, tipe_kamar: activeKamar.tipe,
-        nama_tamu: nama, jumlah_malam: malam, nominal, metode_bayar: selectedBayar,
+        nama_tamu: nama, jumlah_malam: malam, nominal: 0, metode_bayar: null,
         ...AuthUtils.getAuthPayload(),
     };
     SyncQueue.push(CONFIG.tables.hotel, payload);
@@ -333,16 +336,11 @@ async function handleClosingSubmit() {
     const actual = parseInt(document.getElementById('actualCashInput').value) || 0;
     const notes = document.getElementById('closingNotes').value;
 
-    // Tampilkan expected cash
-    const shift = AuthUtils.getAutoShift();
-    document.getElementById('closingShiftLabel').textContent = AuthUtils.getShiftLabel();
-    const expected = await ClosingUtils.calculateExpectedCash(currentUnitName, shift);
-    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + expected.toLocaleString('id-ID');
-
     const res = await ClosingUtils.submit(currentUnitName, pin, actual, notes);
     if (res.ok) {
-        alert('✅ Tutup kasir berhasil disimpan!');
-        document.getElementById('modalClosing').classList.remove('show');
+        alert('✅ Tutup kasir berhasil! Sesi akan ditutup sekarang.');
+        AuthUtils.clearSession(); // Kunci halaman — kasir harus input PIN baru
+        location.reload();
     } else {
         alert('❌ Gagal menyimpan: ' + (res.error || 'Unknown error'));
     }
@@ -352,8 +350,10 @@ async function handleClosingSubmit() {
 document.getElementById('modalClosing').addEventListener('animationstart', async () => {
     const shift = AuthUtils.getAutoShift();
     document.getElementById('closingShiftLabel').textContent = AuthUtils.getShiftLabel();
-    const expected = await ClosingUtils.calculateExpectedCash(currentUnitName, shift);
-    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + expected.toLocaleString('id-ID');
+    const { cash, transfer, qris } = await ClosingUtils.calculateBreakdown(currentUnitName, shift);
+    document.getElementById('expectedCashDisplay').textContent = 'Rp ' + cash.toLocaleString('id-ID');
+    document.getElementById('expectedTransferDisplay').textContent = 'Rp ' + transfer.toLocaleString('id-ID');
+    document.getElementById('expectedQrisDisplay').textContent = 'Rp ' + qris.toLocaleString('id-ID');
 });
 
 function showToast(msg, type) {

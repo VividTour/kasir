@@ -35,12 +35,22 @@
             <div class="dash-card">
                 <div class="dc-label">Total Revenue Hari Ini</div>
                 <div class="dc-val" id="statRevenue" style="color:var(--primary)">—</div>
-                <div class="dc-sub">Semua unit & metode bayar</div>
+                <div class="dc-sub">Semua unit &amp; metode bayar</div>
             </div>
             <div class="dash-card">
-                <div class="dc-label">Transaksi Cash</div>
+                <div class="dc-label">💵 Total Cash</div>
                 <div class="dc-val" id="statCash" style="color:var(--available)">—</div>
-                <div class="dc-sub">Total transaksi cash hari ini</div>
+                <div class="dc-sub">Harus ada di laci kasir</div>
+            </div>
+            <div class="dash-card">
+                <div class="dc-label">💳 Total Transfer</div>
+                <div class="dc-val" id="statTransfer" style="color:var(--karaoke)">—</div>
+                <div class="dc-sub">Bank transfer semua unit</div>
+            </div>
+            <div class="dash-card">
+                <div class="dc-label">📲 Total QRIS</div>
+                <div class="dc-val" id="statQris" style="color:var(--wahana)">—</div>
+                <div class="dc-sub">QRIS semua unit</div>
             </div>
             <div class="dash-card">
                 <div class="dc-label">Closing Bermasalah</div>
@@ -296,9 +306,9 @@ async function loadHotel(date, unit, shift) {
             <td>${r.nomor_kamar} <span style="font-size:10px;color:var(--muted)">${r.tipe_kamar||''}</span></td>
             <td>${r.nama_tamu||'—'}</td>
             <td style="text-align:center">${r.jumlah_malam||'—'}</td>
-            <td>${r.aksi === 'CHECK_IN' && r.nominal ? 'Rp ' + r.nominal.toLocaleString('id-ID') : '<span style="color:var(--border)">—</span>'}</td>
+            <td>${r.aksi === 'CHECK_OUT' ? 'Rp ' + (r.nominal||0).toLocaleString('id-ID') : '<span style="color:var(--border)">—</span>'}</td>
             <td style="color:var(--fnb)">${r.aksi === 'CHECK_OUT' && r.nominal_fnb > 0 ? 'Rp ' + r.nominal_fnb.toLocaleString('id-ID') : '<span style="color:var(--border)">—</span>'}</td>
-            <td>${r.metode_bayar||'—'}</td>
+            <td>${r.aksi === 'CHECK_OUT' ? (r.metode_bayar||'—') : '<span style="color:var(--border)">—</span>'}</td>
             <td>Shift ${r.shift_number||'—'}</td>
         </tr>`).join('')}
         </tbody>
@@ -400,22 +410,18 @@ async function loadStats(date, unit) {
         'transaksi_wahana',
         'transaksi_fnb'
     ];
-    let totalRevenue = 0, totalCash = 0;
+    let totalRevenue = 0, totalCash = 0, totalTransfer = 0, totalQris = 0;
     for (const name of tables) {
         const filters = {};
         if (date) filters['created_at'] = `gte.${date}T00:00:00Z`;
         if (unit) filters['unit'] = `eq.${unit}`;
-        
-        // Ambil field yang dibutuhkan untuk menghindari double counting
         const res = await SupabaseClient.query(name, { select: `aksi,nominal,nominal_fnb,total,metode_bayar`, filters });
-        
         if (res.ok) {
             res.data.forEach(r => {
                 let val = 0;
-                // LOGIKA PENCEGAH DOUBLE COUNTING
+                // Hotel: hanya akui pendapatan saat CHECK_OUT (kamar + F&B)
                 if (name === 'transaksi_hotel') {
-                    if (r.aksi === 'CHECK_IN') val = parseInt(r.nominal || 0);
-                    else if (r.aksi === 'CHECK_OUT') val = parseInt(r.nominal_fnb || 0);
+                    if (r.aksi === 'CHECK_OUT') val = parseInt(r.nominal || 0) + parseInt(r.nominal_fnb || 0);
                 } else if (name === 'transaksi_karaoke') {
                     if (r.aksi === 'END') val = parseInt(r.total || 0);
                 } else {
@@ -423,12 +429,19 @@ async function loadStats(date, unit) {
                 }
 
                 totalRevenue += val;
-                if (r.metode_bayar === 'Cash') totalCash += val;
+                const m = (r.metode_bayar || '').toLowerCase();
+                if (m === 'cash') totalCash += val;
+                else if (m === 'transfer') totalTransfer += val;
+                else if (m === 'qris') totalQris += val;
             });
         }
     }
     document.getElementById('statRevenue').textContent = 'Rp ' + totalRevenue.toLocaleString('id-ID');
     document.getElementById('statCash').textContent = 'Rp ' + totalCash.toLocaleString('id-ID');
+    const transferEl = document.getElementById('statTransfer');
+    const qrisEl = document.getElementById('statQris');
+    if (transferEl) transferEl.textContent = 'Rp ' + totalTransfer.toLocaleString('id-ID');
+    if (qrisEl) qrisEl.textContent = 'Rp ' + totalQris.toLocaleString('id-ID');
 }
 
 // ==================== TABS ====================
